@@ -1,0 +1,14 @@
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+python-dotenv
+python-multipart
+jinja2
+aiofiles
+httpx
+openai
+chromadb
+langchain-text-splitters
+pymupdf
+tenacity
