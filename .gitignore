@@ -1,0 +1,15 @@
+# Python
+__pycache__/
+.ipynb_checkpoints
+
+# Environment secrets
+.env
+
+data/
+
+.venv/
+.pytest_cache/
+.ruff_cache/
+coverage.xml
+htmlcov/
+*.log

@@ -10,7 +10,7 @@ Research Journey Agent 是一个以个人研究课题为中心的文献管理与
 
 项目当前聚焦于单用户、单研究课题场景，优先实现稳定、可解释的文献入库和知识问答流程。
 
-## 项目目标
+## 项目价值
 
 本项目主要解决以下问题：
 
@@ -20,9 +20,7 @@ Research Journey Agent 是一个以个人研究课题为中心的文献管理与
 4. 通用大模型回答科研问题时缺少个人论文库背景；
 5. 普通 RAG 问答缺少可靠的页码和原文证据。
 
-## 当前开发阶段
-
-当前项目处于 MVP 开发阶段。
+## 目标功能
 
 ### 基础功能
 
@@ -31,8 +29,8 @@ Research Journey Agent 是一个以个人研究课题为中心的文献管理与
 - [ ] PDF 删除和重新索引
 - [ ] PDF 文本解析
 - [ ] 章节感知 + 字符递归文本分块
-- [ ] Embedding 生成
-- [ ] ChromaDB 向量存储
+- [ ] 文本索引 + 视觉索引双嵌入模型
+- [ ] Qdrant 向量存储
 - [ ] 基于个人论文库的知识问答
 - [ ] 论文名称和页码引用
 - [ ] 原文证据片段展示
@@ -41,12 +39,10 @@ Research Journey Agent 是一个以个人研究课题为中心的文献管理与
 
 ### 计划功能
 
-- [ ] 自动生成论文摘要
-- [ ] 自动提取核心方法、数据集、评价指标和主要结果
+- [ ] 自动生成论文简要概述,包括核心方法、数据集、评价指标和主要结果等
 - [ ] 多论文结构化对比
 - [ ] 论文主题相关性分析
-- [ ] OpenAlex 学术论文检索
-- [ ] MinerU 复杂 PDF 解析
+- [ ] 谷歌学术、arxiv和知网三个平台论文的检索和自动推荐
 - [ ] 多模态图表检索与理解
 - [ ] RAG 自动化评估
 
@@ -65,7 +61,7 @@ SQLite
 ├── 会话信息
 └── 用户偏好
 
-ChromaDB
+Qdrant
 ├── 文本 Chunk
 ├── Embedding
 ├── 论文 ID
@@ -77,26 +73,41 @@ ChromaDB
 + Python 3.11
 + FastAPI
 + SQLite
-+ ChromaDB
-PyMuPDF
++ Qdrant
++ PyMuPDF和MinerU
 + LangChain
-OpenAI-compatible LLM API
++ text-embedding-v4和bge-visualized-m3
++ OpenAI-compatible LLM API
 + Jinja2
-原生 HTML、CSS 和 JavaScript
++ 原生 HTML、CSS 和 JavaScript
 
 ## 环境配置
-1. 创建虚拟环境
+1. 创建主应用环境
 conda create -n RJagent python=3.11 -y
 conda activate RJagent
-2. 安装python依赖
 python -m pip install --upgrade pip
 pip install -r requirements.txt
-3. 配置环境变量
+
+2. mineru独立环境配置（mineru[all]==3.4.4）
+
+conda create -n rjagent-mineru python=3.11 -y
+conda activate rjagent-mineru
+python -m pip install --upgrade pip
+pip install "mineru[all]==3.4.4"
+
+3. 启动mineru服务
+conda activate rjagent-mineru
+mineru-api --host 127.0.0.1 --port 8001
+访问 http://127.0.0.1:8001/docs 验证服务
+
+4. 配置主应用
 cp .env.example app/backend/.env
 windows powershell启动：
 Copy-Item .env.example app/backend/.env
-4. 启动项目
-uvicorn app.backend.main:app --reload
+
+5. 启动主应用
+conda activate RJagent
+uvicorn app.backend.main:app --reload --host 127.0.0.1 --port 8000
 
 ## 当前项目边界
 
@@ -117,5 +128,6 @@ CNKI 非授权抓取
 Agentic RAG Chatbot Hackathon：RAG、引用、Memory 和测试标准
 Simple RAG Chatbot：基础 PDF 入库和 FastAPI 问答流程
 All-in-RAG：RAG 基础知识与检索评估方法
+hello-agents: agent 系统框架设计
 
 本项目将独立实现文献管理、数据存储、上下文管理和论文分析功能，不直接复制现有项目代码。
