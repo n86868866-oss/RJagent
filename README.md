@@ -82,30 +82,47 @@ Qdrant
 + 原生 HTML、CSS 和 JavaScript
 
 ## 环境配置
-1. 创建主应用环境
+
+### 创建主应用环境
+1. 虚拟环境创建
 conda create -n RJagent python=3.11 -y
 conda activate RJagent
+2. python包依赖安装
 python -m pip install --upgrade pip
 pip install -r requirements.txt
+3. 保存依赖快照
+pip check
+pip freeze > requirements-lock.txt
 
-2. mineru独立环境配置（mineru[all]==3.4.4）
-
+### mineru独立环境配置（mineru[all]==3.4.4）
+1. 虚拟环境创建
 conda create -n rjagent-mineru python=3.11 -y
 conda activate rjagent-mineru
+2. mineru安装
 python -m pip install --upgrade pip
 pip install "mineru[all]==3.4.4"
+3. 保存依赖快照
+pip check
+pip freeze > requirements-mineru-lock.txt
 
-3. 启动mineru服务
+### 启动mineru服务
 conda activate rjagent-mineru
 mineru-api --host 127.0.0.1 --port 8001
 访问 http://127.0.0.1:8001/docs 验证服务
 
-4. 配置主应用
+### 配置主应用 env 环境变量
+1. linux
 cp .env.example app/backend/.env
-windows powershell启动：
-Copy-Item .env.example app/backend/.env
+2. cmd
+copy /Y .env.example app\backend\.env
+3. PowerShell:
+Copy-Item .env.example app\backend\.env
+4. 访问阿里云平台获取LLM和text embedding的url、api、model
+https://help.aliyun.com/zh/model-studio/embedding-interfaces-compatible-with-openai?spm=a2c4g.11186623.help-menu-2400256.d_2_10_7.3f65609f9VYUnR
+5. 若启用 Cookie Session，生成 APP_SECRET_KEY(可选)
+python -c "import secrets; print(secrets.token_urlsafe(48))"
 
-5. 启动主应用
+### 启动主应用
 conda activate RJagent
 uvicorn app.backend.main:app --reload --host 127.0.0.1 --port 8000
 
