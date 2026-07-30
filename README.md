@@ -125,6 +125,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 ### 启动主应用
 conda activate RJagent
 uvicorn app.backend.main:app --reload --host 127.0.0.1 --port 8000
+访问 http://127.0.0.1:8000/docs 验证服务
 
 ## 当前项目边界
 
