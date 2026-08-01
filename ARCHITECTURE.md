@@ -175,3 +175,49 @@ prompts包含长期不变的规则：
 10. 问题无相关证据时明确拒答；
 11. 返回的引用只允许来自检索结果；
 12. Qdrant、SQLite、MinerU、LLM 失败时返回 runtime_error。
+
+
+## 文本检索安全兜底处理(单元测试)
+
+### Embedding Client
+
+#### 正常路径
+1. 单条 query 返回正确维度
+2. 多条 document 保持数量和顺序
+3. 324 条文本正确分批
+4. text_index 乱序可以恢复
+5. 真实 DashScope 集成调用成功
+#### 输入错误
+6. 空文本和纯空白文本被拒绝
+#### 网络与 HTTP
+7. 429 可以重试
+8. 401 不重试
+9. 连接超时可以重试
+#### 响应协议
+10. 向量维度错误
+11. 返回数量错误
+12. text_index 缺失
+13. text_index 不连续
+14. 返回不是 JSON
+
+Ingestion Service
+处理：
+- 重复上传同一 PDF
+- 重复 Chunk
+- Chunk 与 paper_id、页码的关系
+- 入库失败后的论文状态
+
+Qdrant Store / Retrieval Service
+处理：
+- 按 Chunk 检索
+- 重复检索结果
+- Top-K
+- 分数阈值
+- 同一论文相邻 Chunk 合并
+
+Agent / RAG 主循环
+处理：
+- 是否需要重新检索
+- 证据是否充分
+- 是否拒绝回答
+- 如何组织引用
