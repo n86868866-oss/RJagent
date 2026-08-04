@@ -31,6 +31,7 @@ Research Journey Agent 是一个以个人研究课题为中心的文献管理与
 - [ ] 章节感知 + 字符递归文本分块
 - [ ] 文本索引 + 视觉索引双嵌入模型
 - [ ] Qdrant 向量存储
+- [ ] 稠密检索
 - [ ] 基于个人论文库的知识问答
 - [ ] 论文名称和页码引用
 - [ ] 原文证据片段展示
@@ -45,6 +46,7 @@ Research Journey Agent 是一个以个人研究课题为中心的文献管理与
 - [ ] 谷歌学术、arxiv和知网三个平台论文的检索和自动推荐
 - [ ] 多模态图表检索与理解
 - [ ] RAG 自动化评估
+- [ ] “稠密+稀疏”混合检索
 
 ## 数据存储
 
@@ -126,6 +128,19 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 conda activate RJagent
 uvicorn app.backend.main:app --reload --host 127.0.0.1 --port 8000
 访问 http://127.0.0.1:8000/docs 验证服务
+访问 http://127.0.0.1:8000/live、 http://127.0.0.1:8000/ready、http://127.0.0.1:8000/details 检查程序健康状态
+
+### 单元/集成测试
+1. 设置环境变量（集成单元全测试）
+cmd：set RUN_DASHSCOPE_INTEGRATION_TEST=1
+powershell：$env:RUN_DASHSCOPE_INTEGRATION_TEST="1"
+Linux：RUN_DASHSCOPE_INTEGRATION_TEST=1
+2. 测试
+python -m app.backend.units.check_text_embedding
+3. 清除环境变量（仅单元测试）
+cmd：set RUN_DASHSCOPE_INTEGRATION_TEST=
+powershell：Remove-Item Env:RUN_DASHSCOPE_INTEGRATION_TEST
+Linux：unset RUN_DASHSCOPE_INTEGRATION_TEST
 
 ## 当前项目边界
 

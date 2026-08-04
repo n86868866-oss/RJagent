@@ -31,6 +31,11 @@ class Settings(BaseSettings):
         title="Application name",
         description="Name shown in API documentation and the web interface.",
     )
+    app_version: str = Field(
+        default="0.1.0",
+        title="Application version",
+        description="Version of the application.",
+    )
     app_env: Literal["development", "test", "production"] = Field(
         default="development",
         title="Application environment",
@@ -64,7 +69,16 @@ class Settings(BaseSettings):
         title="CORS origins",
         description="Comma-separated origins allowed to call the API.",
     )
-
+    docs_enabled: bool = Field(
+        default=True,
+        title="Enable API documentation",
+        description="Whether to enable the API documentation.",
+    )
+    health_details_enabled: bool = Field(
+        default=True,   
+        title="Enable health details",
+        description="Whether to enable detailed health checks.",
+    )
     # -------------------------------------------------------------------------
     # Data directories and SQLite
     # -------------------------------------------------------------------------

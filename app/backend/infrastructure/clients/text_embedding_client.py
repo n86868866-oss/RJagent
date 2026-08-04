@@ -211,5 +211,23 @@ class TextEmbeddingClient:
 
         return cleaned_texts
 
+    async def probe(self) -> None:
+        """Make one real query request and validate the returned vector."""
+
+        vector = await self.embed_query("health check")
+        if len(vector) != self.dimension:
+            raise TextEmbeddingError(
+                f"Health probe expected dimension {self.dimension}, "
+                f"received {len(vector)}."
+            )
+
     async def close(self) -> None:
         await self.http_client.aclose()
+
+
+""" 先验证每条记录能否读取索引
+→ 排序
+→ 检查记录数量
+→ 检查索引连续性
+→ 检查每条记录是否包含合法向量
+→ 检查向量维度 """
