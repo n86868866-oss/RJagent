@@ -128,7 +128,7 @@ python -c "import secrets; print(secrets.token_urlsafe(48))"
 conda activate RJagent
 uvicorn app.backend.main:app --reload --host 127.0.0.1 --port 8000
 访问 http://127.0.0.1:8000/docs 验证服务
-访问 http://127.0.0.1:8000/live、 http://127.0.0.1:8000/ready、http://127.0.0.1:8000/details 检查程序健康状态
+访问 http://127.0.0.1:8000/health/live、 http://127.0.0.1:8000/health/ready、http://127.0.0.1:8000/health/details 检查程序健康状态
 
 ### 单元/集成测试
 1. 设置环境变量（集成单元全测试）

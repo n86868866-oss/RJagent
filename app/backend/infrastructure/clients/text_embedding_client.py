@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Sequence
 
 import httpx
 
 from app.backend.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 RETRYABLE_STATUS_CODES = {
@@ -214,12 +217,24 @@ class TextEmbeddingClient:
     async def probe(self) -> None:
         """Make one real query request and validate the returned vector."""
 
-        vector = await self.embed_query("health check")
-        if len(vector) != self.dimension:
-            raise TextEmbeddingError(
-                f"Health probe expected dimension {self.dimension}, "
-                f"received {len(vector)}."
-            )
+        payload = self.create_payload(["health check"], self.query_text_type)
+        response = await self.post_embedding_request(payload)
+        data = response.json()
+
+        usage = data.get("usage", {})
+        total_tokens = usage.get("total_tokens")
+        request_id = data.get("request_id")
+
+        logger.info(
+            "text_embedding_probe_succeeded "
+            "model=%s total_tokens=%s request_id=%s",
+            self.model,
+            total_tokens,
+            request_id,
+        )
+
+        items = self.parse_embedding_items(response)
+        self.build_vectors(items, expected_count=1)
 
     async def close(self) -> None:
         await self.http_client.aclose()

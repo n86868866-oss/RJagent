@@ -34,15 +34,10 @@ class FileStore:
     async def check_writable(self) -> None:
         """Create, persist, read, and delete one probe file per directory."""
 
-        await asyncio.gather(
-            *(
-                asyncio.to_thread(self._probe_directory, name, path)
-                for name, path in self.directories.items()
-            )
-        )
+        await asyncio.gather(*(asyncio.to_thread(self.probe_directory, name, path) for name, path in self.directories.items()))
 
     @staticmethod
-    def _probe_directory(name: str, path: Path) -> None:
+    def probe_directory(name: str, path: Path) -> None:
         if not path.is_dir():
             raise RuntimeError(f"Data directory '{name}' does not exist: {path}")
 
@@ -56,8 +51,6 @@ class FileStore:
                 os.fsync(file.fileno())
 
             if probe_path.read_bytes() != payload:
-                raise RuntimeError(
-                    f"Data directory '{name}' failed its read-after-write probe."
-                )
+                raise RuntimeError(f"Data directory '{name}' failed its read-after-write probe.")
         finally:
             probe_path.unlink(missing_ok=True)

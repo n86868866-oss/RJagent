@@ -58,43 +58,43 @@ class HealthService:
 
         names = ("filesystem", "sqlite", "qdrant", "text_embedding", "mineru", "llm", "pymupdf")
         checks = (
-            self._probe_state_resource(
+            self.probe_state_resource(
                 state_name="file_store",
                 probe_name="check_writable",
                 probe="create_write_read_delete_temp_file",
                 required=True,
             ),
-            self._probe_state_resource(
+            self.probe_state_resource(
                 state_name="metadata_store",
                 probe_name="ping",
                 probe="select_1",
                 required=True,
             ),
-            self._probe_state_resource(
+            self.probe_state_resource(
                 state_name="vector_store",
                 probe_name="ping",
                 probe="qdrant_collections_and_dimensions",
                 required=True,
             ),
-            self._probe_state_resource(
+            self.probe_state_resource(
                 state_name="text_embedding_client",
                 probe_name="probe",
                 probe="real_embedding_request",
                 required=True,
             ),
-            self._probe_state_resource(
+            self.probe_state_resource(
                 state_name="mineru_client",
                 probe_name="probe",
                 probe="mineru_health_request",
                 required=True,
             ),
-            self._probe_state_resource(
+            self.probe_state_resource(
                 state_name="llm_client",
                 probe_name="probe",
                 probe="minimal_chat_completion",
                 required=True,
             ),
-            self._run_probe(
+            self.run_probe(
                 operation=PyMuPDFClient.probe,
                 probe="create_serialize_reopen_pdf",
                 required=True,
@@ -105,7 +105,7 @@ class HealthService:
         components.update(dict(zip(names, results, strict=True)))
 
         if self.settings.visual_embedding_enabled:
-            components["visual_embedding"] = await self._probe_state_resource(
+            components["visual_embedding"] = await self.probe_state_resource(
                 state_name="visual_embedding_client",
                 probe_name="probe",
                 probe="visual_embedding_health_request",
@@ -127,7 +127,7 @@ class HealthService:
             components=components,
         )
 
-    async def _probe_state_resource(
+    async def probe_state_resource(
         self,
         *,
         state_name: str,
@@ -157,13 +157,9 @@ class HealthService:
                 error_type=f"ProbeMethodMissing:{state_name}.{probe_name}",
             )
 
-        return await self._run_probe(
-            operation=operation,
-            probe=probe,
-            required=required,
-        )
+        return await self.run_probe(operation=operation, probe=probe, required=required)
 
-    async def _run_probe(
+    async def run_probe(
         self,
         *,
         operation: Callable[[], Awaitable[None]],
@@ -174,16 +170,13 @@ class HealthService:
 
         started_at = perf_counter()
         try:
-            await asyncio.wait_for(
-                operation(),
-                timeout=PROBE_TIMEOUT_SECONDS,
-            )
+            await asyncio.wait_for(operation(), timeout=PROBE_TIMEOUT_SECONDS)
         except TimeoutError:
             return ComponentCheckResult(
                 status="error",
                 required=required,
                 probe=probe,
-                latency_ms=self._elapsed_ms(started_at),
+                latency_ms=self.elapsed_ms(started_at),
                 error_type="ProbeTimeout",
             )
         except Exception as error:
@@ -191,7 +184,7 @@ class HealthService:
                 status="error",
                 required=required,
                 probe=probe,
-                latency_ms=self._elapsed_ms(started_at),
+                latency_ms=self.elapsed_ms(started_at),
                 error_type=type(error).__name__,
             )
 
@@ -199,9 +192,9 @@ class HealthService:
             status="ok",
             required=required,
             probe=probe,
-            latency_ms=self._elapsed_ms(started_at),
+            latency_ms=self.elapsed_ms(started_at),
         )
 
     @staticmethod
-    def _elapsed_ms(started_at: float) -> float:
+    def elapsed_ms(started_at: float) -> float:
         return round((perf_counter() - started_at) * 1000, 2)

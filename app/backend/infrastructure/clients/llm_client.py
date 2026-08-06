@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
+import logging
+
 from app.backend.config import Settings
+
+logger = logging.getLogger(__name__)
 
 
 class LLMProtocolError(RuntimeError):
@@ -55,6 +59,18 @@ class LLMClient:
 
         if not response.choices:
             raise LLMProtocolError("LLM health probe returned no choices.")
+
+        usage = response.usage
+        
+        logger.info(
+            "llm_probe_succeeded "
+            "model=%s prompt_tokens=%s "
+            "completion_tokens=%s total_tokens=%s",
+            self.model,
+            usage.prompt_tokens if usage else None,
+            usage.completion_tokens if usage else None,
+            usage.total_tokens if usage else None,
+            )
 
     async def close(self) -> None:
         await self.client.close()

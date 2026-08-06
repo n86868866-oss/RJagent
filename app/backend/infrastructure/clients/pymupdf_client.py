@@ -10,16 +10,14 @@ class PyMuPDFClient:
     async def probe() -> None:
         """Create, serialize, reopen, validate, and close a minimal PDF."""
 
-        await asyncio.to_thread(PyMuPDFClient._probe_sync)
+        await asyncio.to_thread(PyMuPDFClient.probe_sync)
 
     @staticmethod
-    def _probe_sync() -> None:
+    def probe_sync() -> None:
         try:
             import pymupdf
         except ImportError as error:
-            raise RuntimeError(
-                "PyMuPDF is not installed or cannot be imported."
-            ) from error
+            raise RuntimeError("PyMuPDF is not installed or cannot be imported.") from error
 
         document = pymupdf.open()
         try:
@@ -31,8 +29,6 @@ class PyMuPDFClient:
         reopened = pymupdf.open(stream=payload, filetype="pdf")
         try:
             if reopened.page_count != 1:
-                raise RuntimeError(
-                    "PyMuPDF health probe reopened an unexpected page count."
-                )
+                raise RuntimeError("PyMuPDF health probe reopened an unexpected page count.")
         finally:
             reopened.close()

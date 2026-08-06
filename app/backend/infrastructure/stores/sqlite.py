@@ -13,14 +13,10 @@ class SQLiteDatabase:
 
     @classmethod
     async def connect(cls, path: Path, *, busy_timeout_ms: int, enable_wal: bool) -> "SQLiteDatabase":
-        # Lazy import keeps module discovery possible before runtime dependencies
-        # are installed. Application startup still fails clearly if it is missing.
         try:
             import aiosqlite
         except ImportError as error:  # pragma: no cover - environment failure
-            raise RuntimeError(
-                "aiosqlite is required. Install the packages from requirements.txt."
-            ) from error
+            raise RuntimeError("aiosqlite is required. Install the packages from requirements.txt.") from error
 
         path.parent.mkdir(parents=True, exist_ok=True)
         connection = await aiosqlite.connect(path)
@@ -43,18 +39,13 @@ class SQLiteDatabase:
     async def initialize_schema_version_table(self) -> None:
         await self.connection.execute(
             """
-            CREATE TABLE IF NOT EXISTS schema_version (
-                version INTEGER NOT NULL
-            )
+            CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)
             """
         )
         cursor = await self.connection.execute("SELECT COUNT(*) AS count FROM schema_version")
         row = await cursor.fetchone()
         if row["count"] == 0:
-            await self.connection.execute(
-                "INSERT INTO schema_version(version) VALUES (?)",
-                (1,),
-            )
+            await self.connection.execute("INSERT INTO schema_version(version) VALUES (?)", (1,))
         await self.connection.commit()
 
     async def ping(self) -> None:

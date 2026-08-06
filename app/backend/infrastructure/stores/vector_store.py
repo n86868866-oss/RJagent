@@ -27,11 +27,7 @@ class VectorStore:
             path.mkdir(parents=True, exist_ok=True)
             client = AsyncQdrantClient(path=str(path))
         else:
-            api_key = (
-                settings.qdrant_api_key.get_secret_value()
-                if settings.qdrant_api_key
-                else None
-            )
+            api_key = (settings.qdrant_api_key.get_secret_value() if settings.qdrant_api_key else None)
             client = AsyncQdrantClient(
                 url=settings.qdrant_url,
                 api_key=api_key,
@@ -49,17 +45,11 @@ class VectorStore:
         return store
 
     async def ensure_collections(self) -> None:
-        await self._ensure_collection(
-            name=self.settings.qdrant_text_collection,
-            dimension=self.settings.text_embedding_dimension,
-        )
+        await self.ensure_collection(name=self.settings.qdrant_text_collection, dimension=self.settings.text_embedding_dimension)
         if self.settings.visual_embedding_enabled:
-            await self._ensure_collection(
-                name=self.settings.qdrant_figure_collection,
-                dimension=self.settings.visual_embedding_dimension,
-            )
+            await self.ensure_collection(name=self.settings.qdrant_figure_collection, dimension=self.settings.visual_embedding_dimension)
 
-    async def _ensure_collection(self, *, name: str, dimension: int) -> None:
+    async def ensure_collection(self, *, name: str, dimension: int) -> None:
         from qdrant_client.models import Distance, VectorParams
 
         distance_map = {
@@ -76,13 +66,10 @@ class VectorStore:
             exists = False
 
         if not exists:
-            await self.client.create_collection(
-                collection_name=name,
-                vectors_config=VectorParams(size=dimension, distance=distance),
-            )
+            await self.client.create_collection(collection_name=name, vectors_config=VectorParams(size=dimension, distance=distance))
             return
 
-        actual_dimension = await self._read_collection_dimension(name)
+        actual_dimension = await self.read_collection_dimension(name)
         if actual_dimension != dimension:
             raise RuntimeError(
                 f"Qdrant collection '{name}' has dimension {actual_dimension}; "
@@ -93,30 +80,19 @@ class VectorStore:
         """Query Qdrant and validate every enabled collection dimension."""
 
         await self.client.get_collections()
-        await self._assert_collection_dimension(
-            name=self.settings.qdrant_text_collection,
-            expected=self.settings.text_embedding_dimension,
-        )
+        await self.assert_collection_dimension(name=self.settings.qdrant_text_collection, expected=self.settings.text_embedding_dimension)
         if self.settings.visual_embedding_enabled:
-            await self._assert_collection_dimension(
-                name=self.settings.qdrant_figure_collection,
-                expected=self.settings.visual_embedding_dimension,
-            )
+            await self.assert_collection_dimension(name=self.settings.qdrant_figure_collection, expected=self.settings.visual_embedding_dimension)
 
-    async def _assert_collection_dimension(
-        self,
-        *,
-        name: str,
-        expected: int,
-    ) -> None:
-        actual = await self._read_collection_dimension(name)
+    async def assert_collection_dimension(self, *, name: str, expected: int) -> None:
+        actual = await self.read_collection_dimension(name)
         if actual != expected:
             raise RuntimeError(
                 f"Qdrant collection '{name}' dimension changed "
                 f"from {expected} to {actual}."
             )
 
-    async def _read_collection_dimension(self, name: str) -> int | None:
+    async def read_collection_dimension(self, name: str) -> int | None:
         info = await self.client.get_collection(name)
         vectors_config = info.config.params.vectors
         if isinstance(vectors_config, dict):

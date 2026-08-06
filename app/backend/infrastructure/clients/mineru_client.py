@@ -48,14 +48,10 @@ class MinerUClient:
         try:
             payload = response.json()
         except ValueError as error:
-            raise MinerUProtocolError(
-                "MinerU health endpoint returned non-JSON content."
-            ) from error
+            raise MinerUProtocolError("MinerU health endpoint returned non-JSON content.") from error
 
         if not isinstance(payload, dict):
-            raise MinerUProtocolError(
-                "MinerU health endpoint returned an invalid JSON object."
-            )
+            raise MinerUProtocolError("MinerU health endpoint returned an invalid JSON object.")
 
     async def close(self) -> None:
         await self.http_client.aclose()
