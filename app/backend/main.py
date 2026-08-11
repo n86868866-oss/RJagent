@@ -3,11 +3,12 @@ from contextlib import AsyncExitStack, asynccontextmanager, AbstractAsyncContext
 from typing import AsyncIterator
 from collections.abc import Callable
 
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.backend.api.router import chat, health, papers, preferences
+from app.backend.api.router import root_router
 from app.backend.config import Settings, get_settings
+from app.backend.core.exception_handlers import register_exception_handlers
 from app.backend.core.logging import configure_logging
 from app.backend.infrastructure.clients.llm_client import LLMClient
 from app.backend.infrastructure.clients.mineru_client import MinerUClient
@@ -17,6 +18,8 @@ from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.infrastructure.stores.sqlite import SQLiteDatabase
 from app.backend.infrastructure.stores.vector_store import VectorStore
+from app.backend.middleware.access_log import AccessLogMiddleware
+from app.backend.middleware.request_context import RequestContextMiddleware
 
 logger = logging.getLogger(__name__)
 
@@ -92,7 +95,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 LifespanCallable = Callable[[FastAPI], AbstractAsyncContextManager[None]]
 
 
-def create_app(settings: Settings | None = None,*,lifespan_context: LifespanCallable = lifespan) -> FastAPI:
+def create_app(
+    settings: Settings | None = None,
+    *,
+    lifespan_context: LifespanCallable = lifespan,
+) -> FastAPI:
     """Create one fully configured FastAPI application instance."""
 
     settings = settings or get_settings()
@@ -116,21 +123,10 @@ def create_app(settings: Settings | None = None,*,lifespan_context: LifespanCall
             allow_headers=["*"],
         )
 
-    business_router = APIRouter(prefix="/api")
-
-    @business_router.get("", tags=["system"])
-    async def api_index() -> dict[str, str]:
-        return {
-            "status": "ok",
-            "message": "Business API router is registered.",
-        }
-
-    business_router.include_router(papers.router)
-    business_router.include_router(chat.router)
-    business_router.include_router(preferences.router)
-
-    app.include_router(health.router)
-    app.include_router(business_router)
+    app.add_middleware(AccessLogMiddleware)
+    app.add_middleware(RequestContextMiddleware)
+    register_exception_handlers(app)
+    app.include_router(root_router)
     return app
 
 

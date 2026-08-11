@@ -58,6 +58,21 @@ class Settings(BaseSettings):
         title="Log level",
         description="Minimum application log level.",
     )
+    log_format: Literal["text", "json"] = Field(
+        default="text",
+        title="Log format",
+        description="Application log output format.",
+    )
+    log_access_enabled: bool = Field(
+        default=True,
+        title="Enable access log",
+        description="Whether project access logging middleware is enabled.",
+    )
+    trust_inbound_request_id: bool = Field(
+        default=False,
+        title="Trust inbound request ID",
+        description="Whether a valid inbound X-Request-ID header may be reused.",
+    )
     app_secret_key: SecretStr | None = Field(
         default=None,
         repr=False,

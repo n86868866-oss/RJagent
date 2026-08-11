@@ -10,16 +10,16 @@ ComponentStatus = Literal["ok", "error", "disabled"]
 HealthStatus = Literal["ready", "not_ready"]
 
 
-class LivenessResponse(BaseModel):
-    """Contract for GET /health/live."""
+class LivenessData(BaseModel):
+    """Data contract for GET /health/live."""
 
     status: Literal["ok"]
     name: str
     version: str
 
 
-class ReadinessComponentResponse(BaseModel):
-    """Minimal component contract for GET /health/ready."""
+class ReadinessComponentData(BaseModel):
+    """Minimal component data for GET /health/ready."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,18 +27,18 @@ class ReadinessComponentResponse(BaseModel):
     required: bool
 
 
-class ReadinessResponse(BaseModel):
-    """Minimal readiness contract used for traffic decisions."""
+class ReadinessData(BaseModel):
+    """Minimal readiness data used for traffic decisions."""
 
     model_config = ConfigDict(from_attributes=True)
 
     status: HealthStatus
     checked_at: datetime
-    components: dict[str, ReadinessComponentResponse]
+    components: dict[str, ReadinessComponentData]
 
 
-class DetailedComponentHealthResponse(BaseModel):
-    """Diagnostic component contract for GET /health/details."""
+class DetailedComponentHealthData(BaseModel):
+    """Diagnostic component data for GET /health/details."""
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -49,11 +49,11 @@ class DetailedComponentHealthResponse(BaseModel):
     error_type: str | None = None
 
 
-class HealthDetailsResponse(BaseModel):
-    """Restricted diagnostic contract with safe probe metadata."""
+class HealthDetailsData(BaseModel):
+    """Restricted diagnostic data with safe probe metadata."""
 
     model_config = ConfigDict(from_attributes=True)
 
     status: HealthStatus
     checked_at: datetime
-    components: dict[str, DetailedComponentHealthResponse]
+    components: dict[str, DetailedComponentHealthData]

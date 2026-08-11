@@ -112,23 +112,26 @@ conda activate rjagent-mineru
 mineru-api --host 127.0.0.1 --port 8001
 访问 http://127.0.0.1:8001/docs 验证服务
 
-### 配置主应用 env 环境变量
-1. linux
-cp .env.example app/backend/.env
-2. cmd
-copy /Y .env.example app\backend\.env
-3. PowerShell:
-Copy-Item .env.example app\backend\.env
-4. 访问阿里云平台获取LLM和text embedding的url、api、model
+### 配置主应用 
+1. 配置env 环境变量
+linux：cp .env.example app/backend/.env
+cmd：copy /Y .env.example app\backend\.env
+PowerShell: Copy-Item .env.example app\backend\.env
+2. 访问阿里云平台获取LLM和text embedding的url、api、model
 https://help.aliyun.com/zh/model-studio/embedding-interfaces-compatible-with-openai?spm=a2c4g.11186623.help-menu-2400256.d_2_10_7.3f65609f9VYUnR
-5. 若启用 Cookie Session，生成 APP_SECRET_KEY(可选)
+3. 若启用 Cookie Session，生成 APP_SECRET_KEY(可选)
 python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+### 启动qdrant服务（本地服务模式）
+docker volume create qdrant_storage
+docker run -d --name qdrant -p 127.0.0.1:6333:6333 -p 127.0.0.1:6334:6334 -v qdrant_storage:/qdrant/storage qdrant/qdrant:latest
 
 ### 启动主应用
 conda activate RJagent
 uvicorn app.backend.main:app --reload --host 127.0.0.1 --port 8000
 访问 http://127.0.0.1:8000/docs 验证服务
 访问 http://127.0.0.1:8000/health/live、 http://127.0.0.1:8000/health/ready、http://127.0.0.1:8000/health/details 检查程序健康状态
+访问 http://127.0.0.1:6333/dashboard 查看qdrant数据库
 
 ### 单元/集成测试
 1. 设置环境变量（集成单元全测试）
