@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -17,6 +18,7 @@ ComponentStatus = Literal["ok", "error", "disabled"]
 HealthStatus = Literal["ready", "not_ready"]
 
 PROBE_TIMEOUT_SECONDS = 15.0
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +28,7 @@ class ComponentCheckResult:
     probe: str
     latency_ms: float
     error_type: str | None = None
+    error_message: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -59,42 +62,49 @@ class HealthService:
         names = ("filesystem", "sqlite", "qdrant", "text_embedding", "mineru", "llm", "pymupdf")
         checks = (
             self.probe_state_resource(
+                component="filesystem",
                 state_name="file_store",
                 probe_name="check_writable",
                 probe="create_write_read_delete_temp_file",
                 required=True,
             ),
             self.probe_state_resource(
+                component="sqlite",
                 state_name="metadata_store",
                 probe_name="ping",
                 probe="select_1",
                 required=True,
             ),
             self.probe_state_resource(
+                component="qdrant",
                 state_name="vector_store",
                 probe_name="ping",
                 probe="qdrant_collections_and_dimensions",
                 required=True,
             ),
             self.probe_state_resource(
+                component="text_embedding",
                 state_name="text_embedding_client",
                 probe_name="probe",
                 probe="real_embedding_request",
                 required=True,
             ),
             self.probe_state_resource(
+                component="mineru",
                 state_name="mineru_client",
                 probe_name="probe",
                 probe="mineru_health_request",
                 required=True,
             ),
             self.probe_state_resource(
+                component="llm",
                 state_name="llm_client",
                 probe_name="probe",
                 probe="minimal_chat_completion",
                 required=True,
             ),
             self.run_probe(
+                component="pymupdf",
                 operation=PyMuPDFClient.probe,
                 probe="create_serialize_reopen_pdf",
                 required=True,
@@ -106,6 +116,7 @@ class HealthService:
 
         if self.settings.visual_embedding_enabled:
             components["visual_embedding"] = await self.probe_state_resource(
+                component="visual_embedding",
                 state_name="visual_embedding_client",
                 probe_name="probe",
                 probe="visual_embedding_health_request",
@@ -127,14 +138,7 @@ class HealthService:
             components=components,
         )
 
-    async def probe_state_resource(
-        self,
-        *,
-        state_name: str,
-        probe_name: str,
-        probe: str,
-        required: bool,
-    ) -> ComponentCheckResult:
+    async def probe_state_resource(self, *, component: str, state_name: str, probe_name: str, probe: str, required: bool) -> ComponentCheckResult:
         """Resolve one lifespan resource and execute its real probe method."""
 
         resource = getattr(self.app.state, state_name, None)
@@ -145,6 +149,7 @@ class HealthService:
                 probe=probe,
                 latency_ms=0.0,
                 error_type="ResourceNotInitialized",
+                error_message=f"{state_name} is not initialized.",
             )
 
         operation = getattr(resource, probe_name, None)
@@ -155,17 +160,12 @@ class HealthService:
                 probe=probe,
                 latency_ms=0.0,
                 error_type=f"ProbeMethodMissing:{state_name}.{probe_name}",
+                error_message=f"{state_name}.{probe_name} is not callable.",
             )
 
-        return await self.run_probe(operation=operation, probe=probe, required=required)
+        return await self.run_probe(component=component, operation=operation, probe=probe, required=required)
 
-    async def run_probe(
-        self,
-        *,
-        operation: Callable[[], Awaitable[None]],
-        probe: str,
-        required: bool,
-    ) -> ComponentCheckResult:
+    async def run_probe(self, *, component: str, operation: Callable[[], Awaitable[None]], probe: str, required: bool) -> ComponentCheckResult:
         """Execute one probe with a hard timeout and normalize its result."""
 
         started_at = perf_counter()
@@ -178,14 +178,24 @@ class HealthService:
                 probe=probe,
                 latency_ms=self.elapsed_ms(started_at),
                 error_type="ProbeTimeout",
+                error_message=f"Probe exceeded {PROBE_TIMEOUT_SECONDS} seconds.",
             )
         except Exception as error:
+            logger.warning(
+                "health_probe_failed component=%s probe=%s error_type=%s error_message=%s",
+                component,
+                probe,
+                type(error).__name__,
+                str(error),
+                exc_info=True,
+            )
             return ComponentCheckResult(
                 status="error",
                 required=required,
                 probe=probe,
                 latency_ms=self.elapsed_ms(started_at),
                 error_type=type(error).__name__,
+                error_message=str(error),
             )
 
         return ComponentCheckResult(

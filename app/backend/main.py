@@ -5,6 +5,7 @@ from collections.abc import Callable
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.backend.api.router import root_router
 from app.backend.config import Settings, get_settings
@@ -18,8 +19,8 @@ from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.infrastructure.stores.sqlite import SQLiteDatabase
 from app.backend.infrastructure.stores.vector_store import VectorStore
-from app.backend.middleware.access_log import AccessLogMiddleware
-from app.backend.middleware.request_context import RequestContextMiddleware
+from app.backend.middleware.access_log import access_log_middleware
+from app.backend.middleware.request_context import request_context_middleware
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +96,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 LifespanCallable = Callable[[FastAPI], AbstractAsyncContextManager[None]]
 
 
-def create_app(
-    settings: Settings | None = None,
-    *,
-    lifespan_context: LifespanCallable = lifespan,
-) -> FastAPI:
+def create_app(settings: Settings | None = None, *, lifespan_context: LifespanCallable = lifespan) -> FastAPI:
     """Create one fully configured FastAPI application instance."""
 
     settings = settings or get_settings()
@@ -123,8 +120,9 @@ def create_app(
             allow_headers=["*"],
         )
 
-    app.add_middleware(AccessLogMiddleware)
-    app.add_middleware(RequestContextMiddleware)
+    app.add_middleware(BaseHTTPMiddleware, dispatch=access_log_middleware)
+    app.add_middleware(BaseHTTPMiddleware, dispatch=request_context_middleware)
+
     register_exception_handlers(app)
     app.include_router(root_router)
     return app

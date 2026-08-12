@@ -47,6 +47,7 @@ class DetailedComponentHealthData(BaseModel):
     probe: str
     latency_ms: float = Field(ge=0)
     error_type: str | None = None
+    error_message: str | None = None
 
 
 class HealthDetailsData(BaseModel):

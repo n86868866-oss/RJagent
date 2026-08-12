@@ -39,11 +39,7 @@ async def request_validation_error_handler(request: Request, exc: RequestValidat
 
 async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
     status_code = int(exc.status_code)
-    response = fail(
-        code=status_code,
-        message=message_for_http_status(status_code),
-        request=request,
-    )
+    response = fail(code=status_code, message=message_for_http_status(status_code), request=request)
     logger.warning(
         "http_exception request_id=%s method=%s path=%s status_code=%s",
         response.request_id,

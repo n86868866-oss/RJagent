@@ -17,6 +17,10 @@ def configure_logging(settings: Settings) -> None:
     """Configure one predictable logging setup for the application and Uvicorn."""
 
     level = settings.log_level
+    log_dir = settings.project_path(settings.data_dir) / "log"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "app.log"
+
     log_format = (
         "%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s"
     )
@@ -35,31 +39,41 @@ def configure_logging(settings: Settings) -> None:
                 },
             },
             "handlers": {
-                "default": {
+                "console": {
                     "class": "logging.StreamHandler",
                     "formatter": "default",
                     "filters": ["request_id"],
                     "level": level,
                 },
+                "file": {
+                    "class": "logging.handlers.TimedRotatingFileHandler",
+                    "formatter": "default",
+                    "filters": ["request_id"],
+                    "level": level,
+                    "filename": str(log_file),
+                    "when": "midnight",
+                    "backupCount": 14,
+                    "encoding": "utf-8",
+                },
             },
             "root": {
-                "handlers": ["default"],
+                "handlers": ["console", "file"],
                 "level": level,
             },
             "loggers": {
                 "uvicorn": {
-                    "handlers": ["default"],
+                    "handlers": ["console", "file"],
                     "level": level,
                     "propagate": False,
                 },
                 "uvicorn.error": {
-                    "handlers": ["default"],
+                    "handlers": ["console", "file"],
                     "level": level,
                     "propagate": False,
                 },
                 # Access logging will be replaced by the project middleware later.
                 "uvicorn.access": {
-                    "handlers": ["default"],
+                    "handlers": ["console", "file"],
                     "level": level,
                     "propagate": False,
                 },
