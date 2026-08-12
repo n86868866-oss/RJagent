@@ -63,9 +63,7 @@ class LLMClient:
         usage = response.usage
         
         logger.info(
-            "llm_probe_succeeded "
-            "model=%s prompt_tokens=%s "
-            "completion_tokens=%s total_tokens=%s",
+            "大语言模型健康检查成功 模型:%s 提示token数:%s 补全token数:%s 总token数:%s",
             self.model,
             usage.prompt_tokens if usage else None,
             usage.completion_tokens if usage else None,

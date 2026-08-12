@@ -74,7 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             startup_completed = True
 
             logger.info(
-                "application_started app=%s version=%s env=%s",
+                "应用启动完成 名称:%s 版本:%s 环境:%s",
                 settings.app_name,
                 settings.app_version,
                 settings.app_env,
@@ -87,10 +87,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     except Exception:
         phase = "shutdown" if startup_completed else "startup"
-        logger.exception("application_%s_failed", phase)
+        phase_message = "关闭" if phase == "shutdown" else "启动"
+        logger.exception("应用%s失败", phase_message)
         raise
 
-    logger.info("application_stopped app=%s", settings.app_name)
+    logger.info("应用已停止 名称:%s", settings.app_name)
 
 
 LifespanCallable = Callable[[FastAPI], AbstractAsyncContextManager[None]]

@@ -140,6 +140,7 @@ powershell：$env:RUN_DASHSCOPE_INTEGRATION_TEST="1"
 Linux：RUN_DASHSCOPE_INTEGRATION_TEST=1
 2. 测试
 python -m app.backend.units.check_text_embedding
+python -m pytest app/backend/units/contracts -q
 3. 清除环境变量（仅单元测试）
 cmd：set RUN_DASHSCOPE_INTEGRATION_TEST=
 powershell：Remove-Item Env:RUN_DASHSCOPE_INTEGRATION_TEST

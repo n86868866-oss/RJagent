@@ -71,10 +71,19 @@ def configure_logging(settings: Settings) -> None:
                     "level": level,
                     "propagate": False,
                 },
-                # Access logging will be replaced by the project middleware later.
                 "uvicorn.access": {
+                    "handlers": [],
+                    "level": "WARNING",
+                    "propagate": False,
+                },
+                "httpx": {
                     "handlers": ["console", "file"],
-                    "level": level,
+                    "level": "WARNING",
+                    "propagate": False,
+                },
+                "httpcore": {
+                    "handlers": ["console", "file"],
+                    "level": "WARNING",
                     "propagate": False,
                 },
             },

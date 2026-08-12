@@ -6,7 +6,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import FastAPI
 
@@ -181,12 +181,16 @@ class HealthService:
                 error_message=f"Probe exceeded {PROBE_TIMEOUT_SECONDS} seconds.",
             )
         except Exception as error:
+            root_error = root_cause(error)
             logger.warning(
-                "health_probe_failed component=%s probe=%s error_type=%s error_message=%s",
+                "组件%s 健康检查失败 探针%s 目标%s 错误%s:%s 根因%s:%s",
                 component,
                 probe,
+                probe_target(operation),
                 type(error).__name__,
                 str(error),
+                type(root_error).__name__,
+                str(root_error),
                 exc_info=True,
             )
             return ComponentCheckResult(
@@ -208,3 +212,42 @@ class HealthService:
     @staticmethod
     def elapsed_ms(started_at: float) -> float:
         return round((perf_counter() - started_at) * 1000, 2)
+
+
+def root_cause(error: BaseException) -> BaseException:
+    current = error
+    seen: set[int] = set()
+    while id(current) not in seen:
+        seen.add(id(current))
+        next_error = current.__cause__ or current.__context__
+        if next_error is None:
+            break
+        current = next_error
+    return current
+
+
+def probe_target(operation: Callable[[], Awaitable[None]]) -> str:
+    target = getattr(operation, "__self__", None)
+    if target is None:
+        return "-"
+
+    endpoint = getattr(target, "endpoint", None)
+    if isinstance(endpoint, str) and endpoint:
+        return endpoint
+
+    http_client = getattr(target, "http_client", None)
+    base_url: Any = getattr(http_client, "base_url", None)
+    if base_url is not None:
+        return str(base_url)
+
+    path = getattr(target, "path", None)
+    if path is not None:
+        return str(path)
+
+    settings = getattr(target, "settings", None)
+    if settings is not None and getattr(settings, "qdrant_mode", None) == "server":
+        return str(getattr(settings, "qdrant_url", "-") or "-")
+    if settings is not None and getattr(settings, "qdrant_mode", None) == "local":
+        return str(settings.project_path(settings.qdrant_path))
+
+    return target.__class__.__name__

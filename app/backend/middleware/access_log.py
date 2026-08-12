@@ -7,8 +7,6 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import Response
 
-from app.backend.middleware.request_context import get_current_request_id
-
 
 logger = logging.getLogger(__name__)
 
@@ -34,21 +32,17 @@ async def access_log_middleware(request: Request, call_next: RequestResponseEndp
 
 def log_started(request: Request) -> None:
     logger.info(
-        "request_started method=%s path=%s request_id=%s",
+        "%s %s 请求开始",
         request.method,
         request.url.path,
-        get_current_request_id(),
     )
 
 
 def log_finished(request: Request, *, status_code: int, started_at: float) -> None:
-    route = getattr(request.scope.get("route"), "path", None) or "-"
     logger.info(
-        "request_finished method=%s path=%s route=%s status_code=%s duration_ms=%.2f request_id=%s",
+        "%s %s 请求结束 返回%s 耗时%.2fms",
         request.method,
         request.url.path,
-        route,
         status_code,
         (perf_counter() - started_at) * 1000,
-        get_current_request_id(),
     )

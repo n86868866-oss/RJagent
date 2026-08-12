@@ -226,8 +226,7 @@ class TextEmbeddingClient:
         request_id = data.get("request_id")
 
         logger.info(
-            "text_embedding_probe_succeeded "
-            "model=%s total_tokens=%s request_id=%s",
+            "文本向量健康检查成功 模型:%s 总token数:%s 上游请求ID:%s",
             self.model,
             total_tokens,
             request_id,
