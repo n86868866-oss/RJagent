@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             stack.push_async_callback(sqlite.close)
 
             metadata_store = MetadataStore(sqlite)
+            await metadata_store.initialize()
 
             vector_store = await VectorStore.connect(settings)
             stack.push_async_callback(vector_store.close)

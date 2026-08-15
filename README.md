@@ -103,7 +103,9 @@ conda activate rjagent-mineru
 2. mineru安装
 python -m pip install --upgrade pip
 pip install "mineru[all]==3.4.4"
-3. 保存依赖快照
+3. pytorch cuda安装
+python -m pip install --upgrade --force-reinstall torch==2.8.0 torchvision==0.23.0 --index-url https://download.pytorch.org/whl/cu128
+4. 保存依赖快照
 pip check
 pip freeze > requirements-mineru-lock.txt
 

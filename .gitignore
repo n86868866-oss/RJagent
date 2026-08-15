@@ -13,3 +13,5 @@ data/
 coverage.xml
 htmlcov/
 *.log
+
+output/

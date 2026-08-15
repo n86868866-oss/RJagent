@@ -222,6 +222,11 @@ class Settings(BaseSettings):
         title="MinerU timeout",
         description="Maximum duration of one parsing task in seconds.",
     )
+    mineru_backend: Literal["pipeline", "vlm-engine", "hybrid-engine", "vlm-http-client", "hybrid-http-client"] = Field(
+        default="hybrid-engine",
+        title="MinerU parse backend",
+        description="Backend parameter sent to MinerU's file_parse API.",
+    )
     mineru_poll_interval_seconds: float = Field(
         default=2.0,
         gt=0,

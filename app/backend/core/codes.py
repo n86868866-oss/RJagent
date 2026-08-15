@@ -28,6 +28,11 @@ class CommonCode(IntEnum):
 class BusinessCode(IntEnum):
     PAPER_ALREADY_EXISTS = 41001
     PAPER_FORMAT_UNSUPPORTED = 41002
+    SQLITE_UNAVAILABLE = 50102
+    QDRANT_UNAVAILABLE = 50103
+    TEXT_EMBEDDING_UNAVAILABLE = 50104
+    MINERU_UNAVAILABLE = 50105
+    MINERU_RESULT_INVALID = 50106
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,6 +63,11 @@ CODE_SPECS: dict[int, CodeSpec] = {
     CommonCode.GATEWAY_TIMEOUT: CodeSpec(CommonCode.GATEWAY_TIMEOUT, CommonCode.GATEWAY_TIMEOUT, "依赖服务响应超时"),
     BusinessCode.PAPER_ALREADY_EXISTS: CodeSpec(BusinessCode.PAPER_ALREADY_EXISTS, CommonCode.CONFLICT, "论文已存在"),
     BusinessCode.PAPER_FORMAT_UNSUPPORTED: CodeSpec(BusinessCode.PAPER_FORMAT_UNSUPPORTED, CommonCode.UNSUPPORTED_MEDIA_TYPE, "文件格式不支持"),
+    BusinessCode.SQLITE_UNAVAILABLE: CodeSpec(BusinessCode.SQLITE_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "SQLite 暂不可用"),
+    BusinessCode.QDRANT_UNAVAILABLE: CodeSpec(BusinessCode.QDRANT_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "向量数据库暂不可用"),
+    BusinessCode.TEXT_EMBEDDING_UNAVAILABLE: CodeSpec(BusinessCode.TEXT_EMBEDDING_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "文本向量服务暂不可用"),
+    BusinessCode.MINERU_UNAVAILABLE: CodeSpec(BusinessCode.MINERU_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "MinerU 服务暂不可用"),
+    BusinessCode.MINERU_RESULT_INVALID: CodeSpec(BusinessCode.MINERU_RESULT_INVALID, CommonCode.BAD_GATEWAY, "MinerU 解析结果异常"),
 }
 
 

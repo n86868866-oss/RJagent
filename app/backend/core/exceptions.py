@@ -42,15 +42,37 @@ class ConflictError(AppError):
 
 
 class DuplicatePaperError(AppError):
-    def __init__(self, *, fingerprint: str | None = None) -> None:
-        context = {"fingerprint": fingerprint} if fingerprint else None
+    def __init__(self, *, paper_name: str | None = None, fingerprint: str | None = None) -> None:
+        context = {key: value for key, value in {"paper_name": paper_name, "fingerprint": fingerprint}.items() if value}
         super().__init__(BusinessCode.PAPER_ALREADY_EXISTS, context=context)
 
 
 class PaperFormatUnsupportedError(AppError):
     def __init__(self, *, filename: str | None = None, content_type: str | None = None) -> None:
-        context = {
-            key: value
-            for key, value in {"filename": filename, "content_type": content_type}.items() if value
-        }
+        context = {key: value for key, value in {"filename": filename, "content_type": content_type}.items() if value}
         super().__init__(BusinessCode.PAPER_FORMAT_UNSUPPORTED, context=context)
+
+
+class SQLiteUnavailableError(AppError):
+    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
+        super().__init__(BusinessCode.SQLITE_UNAVAILABLE, context=context)
+
+
+class QdrantUnavailableError(AppError):
+    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
+        super().__init__(BusinessCode.QDRANT_UNAVAILABLE, context=context)
+
+
+class TextEmbeddingUnavailableError(AppError):
+    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
+        super().__init__(BusinessCode.TEXT_EMBEDDING_UNAVAILABLE, context=context)
+
+
+class MinerUUnavailableError(AppError):
+    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
+        super().__init__(BusinessCode.MINERU_UNAVAILABLE, context=context)
+
+
+class MinerUResultInvalidError(AppError):
+    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
+        super().__init__(BusinessCode.MINERU_RESULT_INVALID, context=context)
