@@ -34,3 +34,11 @@ class PaperUploadData(BaseModel):
     status: str
     parsed_files: PaperParsedFilesData
     metadata: PaperDocumentMetadataData
+
+
+class PaperDeleteData(BaseModel):
+    paper_id: str
+    paper_name: str
+    filename: str
+    file_size_bytes: int = Field(ge=0)
+    status: str

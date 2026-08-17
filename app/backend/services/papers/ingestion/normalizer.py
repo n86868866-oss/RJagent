@@ -6,7 +6,7 @@ import unicodedata
 from html import unescape
 from typing import Any
 
-from app.backend.services.papers.ingestion.models import PaperDocumentMetadata, TextBlock
+from app.backend.services.papers.models import PaperDocumentMetadata, TextBlock
 
 
 DEFAULT_SECTION_TITLE = "未识别章节"

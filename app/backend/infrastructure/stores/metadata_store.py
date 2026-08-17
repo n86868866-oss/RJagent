@@ -4,6 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from app.backend.infrastructure.stores.sqlite import SQLiteDatabase
+from app.backend.services.papers.models import PaperRecordResult
 
 
 class MetadataStore:
@@ -155,5 +156,22 @@ class MetadataStore:
                 now,
                 now,
             ),
+        )
+        await self.database.connection.commit()
+
+    async def get_paper_by_id(self, paper_id: str) -> dict | None:
+        cursor = await self.database.connection.execute(
+            "SELECT * FROM papers WHERE paper_id = ?",
+            (paper_id,),
+        )
+        row = await cursor.fetchone()
+        if row is None:
+            return None
+        return PaperRecordResult(**row)
+
+    async def delete_paper(self, paper_id: str) -> None:
+        await self.database.connection.execute(
+            "DELETE FROM papers WHERE paper_id = ?",
+            (paper_id,),
         )
         await self.database.connection.commit()

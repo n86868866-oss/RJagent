@@ -7,7 +7,6 @@ from enum import IntEnum
 class CommonCode(IntEnum):
     OK = 200
     CREATED = 201
-    NO_CONTENT = 204
     MOVED_PERMANENTLY = 301
     FOUND = 302
     BAD_REQUEST = 400
@@ -33,6 +32,7 @@ class BusinessCode(IntEnum):
     TEXT_EMBEDDING_UNAVAILABLE = 50104
     MINERU_UNAVAILABLE = 50105
     MINERU_RESULT_INVALID = 50106
+    FILE_STORAGE_UNAVAILABLE = 50107
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,7 +45,6 @@ class CodeSpec:
 CODE_SPECS: dict[int, CodeSpec] = {
     CommonCode.OK: CodeSpec(CommonCode.OK, CommonCode.OK, "请求成功"),
     CommonCode.CREATED: CodeSpec(CommonCode.CREATED, CommonCode.CREATED, "创建成功"),
-    CommonCode.NO_CONTENT: CodeSpec(CommonCode.NO_CONTENT, CommonCode.NO_CONTENT, "请求成功"),
     CommonCode.MOVED_PERMANENTLY: CodeSpec(CommonCode.MOVED_PERMANENTLY, CommonCode.MOVED_PERMANENTLY, "资源已永久重定向"),
     CommonCode.FOUND: CodeSpec(CommonCode.FOUND, CommonCode.FOUND, "资源已临时重定向"),
     CommonCode.BAD_REQUEST: CodeSpec(CommonCode.BAD_REQUEST, CommonCode.BAD_REQUEST, "请求参数不合法"),
@@ -68,6 +67,7 @@ CODE_SPECS: dict[int, CodeSpec] = {
     BusinessCode.TEXT_EMBEDDING_UNAVAILABLE: CodeSpec(BusinessCode.TEXT_EMBEDDING_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "文本向量服务暂不可用"),
     BusinessCode.MINERU_UNAVAILABLE: CodeSpec(BusinessCode.MINERU_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "MinerU 服务暂不可用"),
     BusinessCode.MINERU_RESULT_INVALID: CodeSpec(BusinessCode.MINERU_RESULT_INVALID, CommonCode.BAD_GATEWAY, "MinerU 解析结果异常"),
+    BusinessCode.FILE_STORAGE_UNAVAILABLE: CodeSpec(BusinessCode.FILE_STORAGE_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "文件存储服务暂不可用"),
 }
 
 

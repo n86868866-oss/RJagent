@@ -76,3 +76,7 @@ class MinerUUnavailableError(AppError):
 class MinerUResultInvalidError(AppError):
     def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
         super().__init__(BusinessCode.MINERU_RESULT_INVALID, context=context)
+
+class FileStorageUnavailableError(AppError):
+    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
+        super().__init__(BusinessCode.FILE_STORAGE_UNAVAILABLE, context=context)

@@ -8,30 +8,17 @@ from uuid import uuid4
 
 from app.backend.config import Settings
 from app.backend.core.codes import CommonCode
-from app.backend.core.exceptions import AppError, DuplicatePaperError, MinerUResultInvalidError, MinerUUnavailableError, PaperFormatUnsupportedError, SQLiteUnavailableError
+from app.backend.core.exceptions import AppError, DuplicatePaperError, MinerUResultInvalidError, MinerUUnavailableError, PaperFormatUnsupportedError, SQLiteUnavailableError, FileStorageUnavailableError
 from app.backend.infrastructure.clients.mineru_client import MinerUProtocolError, MinerUServiceError, MinerUClient
 from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.services.papers.ingestion.normalizer import build_text_blocks, extract_document_metadata, extract_paper_name, join_block_text, normalize_paper_name_key
-from app.backend.services.papers.ingestion.models import PaperDocumentMetadata
+from app.backend.services.papers.models import PaperParseResult, PaperDeleteResult
 
 
 logger = logging.getLogger(__name__)
 
 PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf", "application/octet-stream"}
-
-
-@dataclass(frozen=True, slots=True)
-class PaperParseResult:
-    paper_id: str
-    paper_name: str
-    filename: str
-    file_size_bytes: int
-    text_block_count: int
-    page_count: int | None
-    status: str
-    parsed_files: dict[str, str]
-    metadata: PaperDocumentMetadata
 
 
 class PaperService:
@@ -119,6 +106,35 @@ class PaperService:
             status="parsed",
             parsed_files=parsed_files,
             metadata=document_metadata,
+        )
+    
+    async def delete_paper(self, paper_id: str) -> PaperDeleteResult:
+        try:
+            await self.file_store.remove_paper_artifacts(paper_id)
+        except Exception as error:
+            raise FileStorageUnavailableError(context={"operation": "remove_paper_artifacts"}) from error
+        
+        try:
+            paper_record = await self.metadata_store.get_paper_by_id(paper_id)
+        except Exception as error:
+            raise SQLiteUnavailableError(context={"operation": "delete_paper"}) from error
+
+        if paper_record is None:
+            raise AppError(CommonCode.BAD_REQUEST, context={"paper_id": paper_id, "reason": "paper_not_found"})
+
+        try:
+            await self.metadata_store.delete_paper(paper_id)
+        except Exception as error:
+            raise SQLiteUnavailableError(context={"operation": "delete_paper"}) from error
+
+        return PaperDeleteResult(
+            paper_id=paper_record.paper_id,
+            paper_name=paper_record.paper_name,
+            filename=paper_record.filename,
+            file_size_bytes=paper_record.file_size_bytes,
+            text_block_count=0,
+            page_count=None,
+            status="deleted",
         )
 
     def validate_pdf_upload(self, *, filename: str, content_type: str | None, payload: bytes) -> None:
