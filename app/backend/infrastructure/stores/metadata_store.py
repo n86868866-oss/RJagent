@@ -45,8 +45,9 @@ class MetadataStore:
             """
             CREATE TABLE IF NOT EXISTS paper_chunks (
                 chunk_id TEXT PRIMARY KEY,
-                paper_id TEXT NOT NULL,
                 chunk_index INTEGER NOT NULL,
+                paper_id TEXT NOT NULL,
+                paper_name TEXT NOT NULL,
                 page_start INTEGER,
                 page_end INTEGER,
                 section_title TEXT,
@@ -57,6 +58,7 @@ class MetadataStore:
             )
             """
         )
+        await self.ensure_paper_chunk_columns()
         await self.database.connection.execute(
             """
             CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_id
@@ -83,6 +85,22 @@ class MetadataStore:
             if name in existing:
                 continue
             await self.database.connection.execute(f"ALTER TABLE papers ADD COLUMN {name} {definition}")
+
+    async def ensure_paper_chunk_columns(self) -> None:
+        cursor = await self.database.connection.execute("PRAGMA table_info(paper_chunks)")
+        rows = await cursor.fetchall()
+        existing = {row["name"] for row in rows}
+
+        columns = {
+            "paper_name": "TEXT NOT NULL",
+            "header_title": "TEXT",
+        }
+
+        for name, definition in columns.items():
+            if name not in existing:
+                await self.database.connection.execute(
+                    f"ALTER TABLE paper_chunks ADD COLUMN {name} {definition}"
+                )
 
     async def ping(self) -> None:
         await self.database.ping()
@@ -116,50 +134,55 @@ class MetadataStore:
         paper_chunks: list[PaperChunk]
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
-        await self.database.connection.execute(
-            """
-            INSERT INTO papers (paper_id, paper_name, paper_name_key, filename, file_size_bytes, status, authors, affiliations, journal, publisher, doi, publication_year, source, abstract, parsed_file_paths, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                paper_id,
-                paper_name,
-                paper_name_key,
-                filename,
-                file_size_bytes,
-                status,
-                json.dumps(authors, ensure_ascii=False),
-                json.dumps(affiliations, ensure_ascii=False),
-                journal,
-                publisher,
-                doi,
-                publication_year,
-                source,
-                abstract,
-                json.dumps(parsed_file_paths, ensure_ascii=False),
-                now,
-                now,
-            ),
-        )
-        await self.database.connection.executemany(
-            """
-            INSERT INTO paper_chunks (chunk_id, paper_id, chunk_index, page_start, page_end, section_title, section_index, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            [
+        try:
+            await self.database.connection.execute(
+                """
+                INSERT INTO papers (paper_id, paper_name, paper_name_key, filename, file_size_bytes, status, authors, affiliations, journal, publisher, doi, publication_year, source, abstract, parsed_file_paths, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
                 (
-                    chunk.chunk_id,
-                    chunk.paper_id,
-                    chunk.chunk_index,
-                    chunk.metadata.get("page_start"),
-                    chunk.metadata.get("page_end"),
-                    chunk.metadata.get("section_title"),
-                    chunk.metadata.get("section_index"),
-                    chunk.text,
+                    paper_id,
+                    paper_name,
+                    paper_name_key,
+                    filename,
+                    file_size_bytes,
+                    status,
+                    json.dumps(authors, ensure_ascii=False),
+                    json.dumps(affiliations, ensure_ascii=False),
+                    journal,
+                    publisher,
+                    doi,
+                    publication_year,
+                    source,
+                    abstract,
+                    json.dumps(parsed_file_paths, ensure_ascii=False),
                     now,
-                )
-                for chunk in paper_chunks
-            ],
-        )
-        await self.database.connection.commit()
+                    now,
+                ),
+            )
+            await self.database.connection.executemany(
+                """
+                INSERT INTO paper_chunks (chunk_id,  chunk_index, paper_id, paper_name, page_start, page_end, section_title, section_index, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    (
+                        chunk.chunk_id,
+                        chunk.chunk_index,
+                        chunk.paper_id,
+                        chunk.metadata.get("paper_name"),
+                        chunk.metadata.get("page_start"),
+                        chunk.metadata.get("page_end"),
+                        chunk.metadata.get("section_title"),
+                        chunk.metadata.get("section_index"),
+                        chunk.text,
+                        now,
+                    )
+                    for chunk in paper_chunks
+                ],
+            )
+            await self.database.connection.commit()
+        except Exception:
+            await self.database.connection.rollback()
+            raise
 
     async def get_paper_by_id(self, paper_id: str) -> PaperRecordResult | None:
         cursor = await self.database.connection.execute(

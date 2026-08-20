@@ -84,15 +84,6 @@ class PaperService:
                 raise MinerUResultInvalidError(context={"stage": "full_parse", "reason": "markdown_missing"})
             markdown_docs = self.chunker.split_md_document(markdown_text)
             metadata_docs = build_metadata_documents(paper_id=paper_id, paper_name=paper_name, textblocks=text_blocks)
-            if not can_merge_by_index(metadata_docs, markdown_docs):
-                raise MinerUResultInvalidError(
-                    context={
-                        "stage": "chunking",
-                        "reason": "section_alignment_failed",
-                        "metadata_section_count": len(metadata_docs),
-                        "markdown_section_count": len(markdown_docs),
-                    }
-                )
             section_docs = self.chunker.build_section_documents(paper_id=paper_id, paper_name=paper_name, metadata_docs=metadata_docs, md_docs=markdown_docs)
 
             chunk_docs = self.chunker.split_section_document(section_docs=section_docs)

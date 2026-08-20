@@ -12,6 +12,7 @@ class Chunker:
             chunk_size=self.chunk_size,
             chunk_overlap=self.chunk_overlap,
             separators=["\n\n", "\n", "。", "；", "，", ".", ";", ",", " ", ""],
+            keep_separator="end",
             length_function=len,
         )
         self.md_splitter: MarkdownHeaderTextSplitter = MarkdownHeaderTextSplitter(  
@@ -20,7 +21,7 @@ class Chunker:
                 ("##", "h2"),
                 ("###", "h3"),
             ],
-            strip_headers=False,
+            strip_headers=True,
         )
 
     def split_section_document(self, section_docs: list[Document]) -> list[Document]:
@@ -31,21 +32,23 @@ class Chunker:
 
     def build_section_documents(self, paper_id: str, paper_name: str, metadata_docs: list[Document], md_docs: list[Document]) -> list[Document]:
         final_section_docs: list[Document] = []
-        for index, (section_doc, md_doc) in enumerate(zip(metadata_docs, md_docs)):
-            markdown_title = self.markdown_doc_title(md_doc)
+        for index, md_doc in enumerate(md_docs):
+            metadata = {
+                "paper_id": paper_id,
+                "paper_name": paper_name,
+                "markdown_section_index": index,
+                "markdown_h1": md_doc.metadata.get("h1"),
+                "markdown_h2": md_doc.metadata.get("h2"),
+                "markdown_h3": md_doc.metadata.get("h3"),
+            }
+
+            if index < len(metadata_docs):
+                metadata.update(metadata_docs[index].metadata)
+
             final_section_docs.append(
                 Document(
                     page_content=md_doc.page_content,
-                    metadata={
-                        **section_doc.metadata,
-                        "paper_id": paper_id,
-                        "paper_name": paper_name,
-                        "section_title": markdown_title or section_doc.metadata.get("section_title"),
-                        "markdown_section_index": index,
-                        "markdown_h1": md_doc.metadata.get("h1"),
-                        "markdown_h2": md_doc.metadata.get("h2"),
-                        "markdown_h3": md_doc.metadata.get("h3"),
-                    },
+                    metadata=metadata,
                 )
             )
         return final_section_docs
