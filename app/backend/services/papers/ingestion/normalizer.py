@@ -6,6 +6,8 @@ import unicodedata
 from html import unescape
 from typing import Any
 
+from langchain_core.documents import Document
+
 from app.backend.services.papers.models import PaperDocumentMetadata, TextBlock
 
 
@@ -78,6 +80,99 @@ def extract_document_metadata(result: Any, *, paper_name: str) -> PaperDocumentM
 
 def join_block_text(blocks: list[TextBlock]) -> str:
     return "\n\n".join(block.text for block in blocks if block.text.strip())
+
+def build_metadata_documents(*, paper_id: str, paper_name: str, textblocks: list[TextBlock]) -> list[Document]:
+    metadata_docs: list[Document] = []
+
+    current_section_index: int | None = None
+    current_section_title: str | None = None
+    current_texts: list[str] = []
+    current_pages: list[int] = []
+
+    def flush_current_section():
+        nonlocal current_section_index, current_section_title
+        nonlocal current_texts, current_pages
+
+        section_texts = "\n\n".join(text for text in current_texts if text.strip()).strip()
+        if not section_texts:
+            return
+
+        metadata_docs.append(
+            Document(
+                page_content=section_texts,
+                metadata={
+                    "paper_id": paper_id,
+                    "paper_name": paper_name,
+                    "section_index": current_section_index or 0,
+                    "section_title": current_section_title or "未识别章节",
+                    "page_start": min(current_pages) if current_pages else None,
+                    "page_end": max(current_pages) if current_pages else None,
+                }
+            )
+        )
+
+    for block in textblocks:
+        section_index = block.metadata.get("section_index") or 0
+        section_title = block.metadata.get("section_title") or "未识别章节"
+
+        if current_section_index is None:
+            current_section_index = section_index
+            current_section_title = section_title
+
+        if section_index != current_section_index or section_title != current_section_title:
+            flush_current_section()
+            current_section_index = section_index
+            current_section_title = section_title
+            current_texts = []
+            current_pages = []
+
+        current_texts.append(block.text)
+
+        for key in ("page_start", "page_end"):
+            page = block.metadata.get(key)
+            if isinstance(page, int):
+                current_pages.append(page)
+
+    flush_current_section()
+    return metadata_docs
+
+
+def can_merge_by_index(content_docs: list[Document], markdown_docs: list[Document]) -> bool:
+    if len(content_docs) != len(markdown_docs):
+        return False
+
+    if not content_docs:
+        return False
+
+    matched = 0
+    for content_doc, markdown_doc in zip(content_docs, markdown_docs):
+        content_title = normalize_title(content_doc.metadata.get("section_title"))
+        markdown_title = normalize_title(markdown_doc_title(markdown_doc))
+
+        if not content_title or not markdown_title:
+            continue
+
+        if content_title == markdown_title:
+            matched += 1
+        elif content_title in markdown_title or markdown_title in content_title:
+            matched += 1
+
+    return matched >= max(1, int(len(content_docs) * 0.6))
+
+
+def markdown_doc_title(doc: Document) -> str | None:
+    for key in ("h3", "h2", "h1"):
+        value = doc.metadata.get(key)
+        if isinstance(value, str) and value.strip():
+            return value
+    return None
+
+
+def normalize_title(value: Any) -> str:
+    if not isinstance(value, str) or not value:
+        return ""
+    value = value.strip().lstrip("#").strip().lower()
+    return re.sub(r"\s+", " ", value)
 
 
 def load_content_list(result: Any) -> Any | None:

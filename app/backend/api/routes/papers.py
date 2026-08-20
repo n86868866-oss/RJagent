@@ -15,7 +15,8 @@ router = APIRouter(prefix="/papers", tags=["papers"])
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=ApiResponse[PaperUploadData])
 async def upload_paper(request: Request, file: Annotated[UploadFile, File()], service: PaperService = Depends(get_paper_service)) -> ApiResponse[PaperUploadData]:
     payload = await file.read()
-    result = await service.upload_and_parse_pdf(filename=file.filename or "upload.pdf", content_type=file.content_type, payload=payload)
+    result = await service.upload_and_chunker_pdf(filename=file.filename or "upload.pdf", content_type=file.content_type, payload=payload)
+
     data = PaperUploadData(
         paper_id=result.paper_id,
         paper_name=result.paper_name,

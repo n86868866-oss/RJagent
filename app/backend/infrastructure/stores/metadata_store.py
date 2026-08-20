@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from app.backend.infrastructure.stores.sqlite import SQLiteDatabase
-from app.backend.services.papers.models import PaperRecordResult
+from app.backend.services.papers.models import PaperRecordResult, PaperChunk
 
 
 class MetadataStore:
@@ -95,7 +95,7 @@ class MetadataStore:
         row = await cursor.fetchone()
         return row is not None
 
-    async def create_parsed_paper(
+    async def create_paper(
         self,
         *,
         paper_id: str,
@@ -113,29 +113,12 @@ class MetadataStore:
         source: str | None,
         abstract: str | None,
         parsed_file_paths: dict[str, str],
+        paper_chunks: list[PaperChunk]
     ) -> None:
         now = datetime.now(timezone.utc).isoformat()
         await self.database.connection.execute(
             """
-            INSERT INTO papers (
-                paper_id,
-                paper_name,
-                paper_name_key,
-                filename,
-                file_size_bytes,
-                status,
-                authors,
-                affiliations,
-                journal,
-                publisher,
-                doi,
-                publication_year,
-                source,
-                abstract,
-                parsed_file_paths,
-                created_at,
-                updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO papers (paper_id, paper_name, paper_name_key, filename, file_size_bytes, status, authors, affiliations, journal, publisher, doi, publication_year, source, abstract, parsed_file_paths, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 paper_id,
@@ -157,9 +140,28 @@ class MetadataStore:
                 now,
             ),
         )
+        await self.database.connection.executemany(
+            """
+            INSERT INTO paper_chunks (chunk_id, paper_id, chunk_index, page_start, page_end, section_title, section_index, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (
+                    chunk.chunk_id,
+                    chunk.paper_id,
+                    chunk.chunk_index,
+                    chunk.metadata.get("page_start"),
+                    chunk.metadata.get("page_end"),
+                    chunk.metadata.get("section_title"),
+                    chunk.metadata.get("section_index"),
+                    chunk.text,
+                    now,
+                )
+                for chunk in paper_chunks
+            ],
+        )
         await self.database.connection.commit()
 
-    async def get_paper_by_id(self, paper_id: str) -> dict | None:
+    async def get_paper_by_id(self, paper_id: str) -> PaperRecordResult | None:
         cursor = await self.database.connection.execute(
             "SELECT * FROM papers WHERE paper_id = ?",
             (paper_id,),
@@ -167,9 +169,17 @@ class MetadataStore:
         row = await cursor.fetchone()
         if row is None:
             return None
-        return PaperRecordResult(**row)
+        record = dict(row)
+        record["authors"] = json.loads(record["authors"] or "[]")
+        record["affiliations"] = json.loads(record["affiliations"] or "[]")
+        record["parsed_file_paths"] = json.loads(record["parsed_file_paths"] or "{}")
+        return PaperRecordResult(**record)
 
     async def delete_paper(self, paper_id: str) -> None:
+        await self.database.connection.execute(
+            "DELETE FROM paper_chunks WHERE paper_id = ?",
+            (paper_id,),
+        )
         await self.database.connection.execute(
             "DELETE FROM papers WHERE paper_id = ?",
             (paper_id,),
