@@ -16,15 +16,18 @@ from app.backend.core.exceptions import (
     MinerUUnavailableError,
     PaperFormatUnsupportedError,
     SQLiteUnavailableError,
+    TextEmbeddingError,
+    QdrantUnavailableError,
 )
 from app.backend.infrastructure.clients.mineru_client import MinerUProtocolError, MinerUServiceError, MinerUClient
+from app.backend.infrastructure.clients.embedding_client import EmbeddingClient
 from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
+from app.backend.infrastructure.stores.vector_store import VectorStore
 from app.backend.services.papers.ingestion.chunker import Chunker
 from app.backend.services.papers.ingestion.normalizer import (
     build_metadata_documents,
     build_text_blocks,
-    can_merge_by_index,
     extract_document_metadata,
     extract_paper_name,
     join_block_text,
@@ -40,14 +43,16 @@ PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf", "application/octet-
 
 
 class PaperService:
-    def __init__(self, *, settings: Settings, metadata_store: MetadataStore, file_store: FileStore, mineru_client: MinerUClient) -> None:
+    def __init__(self, *, settings: Settings, metadata_store: MetadataStore, file_store: FileStore, mineru_client: MinerUClient, text_embedding_client: EmbeddingClient, vector_store: VectorStore) -> None:
         self.settings = settings
         self.metadata_store = metadata_store
         self.file_store = file_store
         self.mineru_client = mineru_client
+        self.text_embedding_client = text_embedding_client
+        self.vector_store = vector_store
         self.chunker = Chunker(chunk_size=settings.chunk_size_chars, chunk_overlap=settings.chunk_overlap_chars)
 
-    async def upload_and_chunker_pdf(self, *, filename: str, content_type: str | None, payload: bytes) -> PaperParseResult:
+    async def upload_pdf(self, *, filename: str, content_type: str | None, payload: bytes) -> PaperParseResult:
         self.validate_pdf_upload(filename=filename, content_type=content_type, payload=payload)
         logger.info("论文上传开始 文件名%s", filename)
 
@@ -92,6 +97,19 @@ class PaperService:
                 raise LangChainUnavailableError(context={"stage": "chunking", "reason": "paper_chunks_empty"})
 
             logger.info("论文切分完成 论文名%s 文本块数%s 切分块数%s", paper_name, len(text_blocks), len(paper_chunks))
+
+            try:
+                texts = [chunk.text for chunk in paper_chunks]
+                vectors = await self.text_embedding_client.embed_documents(texts)
+            except Exception as error:
+                raise TextEmbeddingError(context={"stage": "embedding", "reason": "embedding_failed"}) from error
+
+            logger.info("文本向量生成完成 论文名%s 向量数量%s 向量维度%s", paper_name, len(vectors), len(vectors[0]) if vectors else 0)
+
+            try:
+                await self.vector_store.upsert_vectors(paper_chunks=paper_chunks, vectors=vectors)
+            except Exception as error:
+                raise QdrantUnavailableError(context={"stage": "vector_store", "reason": "upsert_text_chunks_failed"}) from error
 
             document_metadata = extract_document_metadata(full_result, paper_name=paper_name)
             paper_artifacts_may_exist = True

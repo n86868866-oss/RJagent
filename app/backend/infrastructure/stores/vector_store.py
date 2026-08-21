@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
+
+from qdrant_client.models import PointStruct
 
 from app.backend.config import Settings
+from app.backend.services.papers.models import PaperChunk
 
 
 class VectorStore:
@@ -75,6 +79,42 @@ class VectorStore:
                 f"Qdrant collection '{name}' has dimension {actual_dimension}; "
                 f"configuration expects {dimension}."
             )
+
+    async def upsert_vectors(self, *, paper_chunks: list[PaperChunk], vectors: list[list[float]]) -> None:
+        """Upsert vectors into the Qdrant collection."""
+        if len(paper_chunks) != len(vectors):
+            raise RuntimeError(f"Chunk/vector count mismatch: chunks={len(paper_chunks)}, vectors={len(vectors)}.")
+
+        for index, vector in enumerate(vectors):
+            if len(vector) != self.settings.text_embedding_dimension:
+                raise RuntimeError(
+                    f"Vector dimension mismatch at index {index}: "
+                    f"expected {self.settings.text_embedding_dimension}, received {len(vector)}."
+                )
+
+        points = [
+            PointStruct(
+                id=str(uuid5(NAMESPACE_URL, chunk.chunk_id)),
+                vector=vector,
+                payload={
+                    "paper_id": chunk.paper_id,
+                    "chunk_id": chunk.chunk_id,
+                    "chunk_index": chunk.chunk_index,
+                    "paper_name": chunk.metadata.get("paper_name"),
+                    "section_title": chunk.metadata.get("section_title"),
+                    "section_index": chunk.metadata.get("section_index"),
+                    "page_start": chunk.metadata.get("page_start"),
+                    "page_end": chunk.metadata.get("page_end"),
+                    "text": chunk.text,
+                },
+            )
+            for chunk, vector in zip(paper_chunks, vectors, strict=True)
+        ]
+        await self.client.upsert(
+            collection_name=self.settings.qdrant_text_collection,
+            points=points,
+            wait=True,
+        )
 
     async def ping(self) -> None:
         """Query Qdrant and validate every enabled collection dimension."""

@@ -266,27 +266,24 @@ class Settings(BaseSettings):
     # Text embedding
     # -------------------------------------------------------------------------
 
-    text_embedding_provider: Literal[
-        "dashscope_native",
-        "dashscope_openai_compatible",
-    ] = Field(
-        default="dashscope_native",
+    text_embedding_provider: Literal["dashscope_native", "dashscope_openai_compatible", "local_tei"] = Field(
+        default="local_tei",
         title="Text embedding provider",
         description="API protocol used by the text embedding client.",
     )
-    text_embedding_api_key: SecretStr = Field(
-        ...,
+    text_embedding_api_key: SecretStr | None = Field(
+        default=None,
         repr=False,
         title="Text embedding API key",
-        description="Credential used to call the text embedding service.",
+        description="Credential used to call the text embedding service. Local TEI does not require it by default.",
     )
     text_embedding_base_url: str = Field(
-        ...,
+        default="http://127.0.0.1:8080",
         title="Text embedding base URL",
         description="Base URL of the text embedding service.",
     )
     text_embedding_model: str = Field(
-        default="text-embedding-v4",
+        default="Qwen/Qwen3-Embedding-0.6B",
         title="Text embedding model",
         description="Model used to embed document chunks and user queries.",
     )
@@ -560,7 +557,7 @@ class Settings(BaseSettings):
         description="Whether client and server compatibility is checked.",
     )
     qdrant_text_collection: str = Field(
-        default="paper_text__text_embedding_v4__1024__v1",
+        default="paper_text__qwen3_embedding_0_6b__1024__v1",
         title="Text collection",
         description="Qdrant collection used for document chunk vectors.",
     )
@@ -631,11 +628,14 @@ class Settings(BaseSettings):
                 f"{model_batch_limit} texts per synchronous request."
             )
 
-        embedding_key = self.text_embedding_api_key.get_secret_value().strip()
-        if not embedding_key:
+        if self.text_embedding_provider != "local_tei" and (
+            not self.text_embedding_api_key or not self.text_embedding_api_key.get_secret_value().strip()
+        ):
             raise ValueError("TEXT_EMBEDDING_API_KEY cannot be empty.")
 
         embedding_base_url = self.text_embedding_base_url.rstrip("/")
+        if self.text_embedding_provider == "local_tei" and not embedding_base_url:
+            raise ValueError("local_tei requires a non-empty TEXT_EMBEDDING_BASE_URL.")
         if (
             self.text_embedding_provider == "dashscope_native"
             and not embedding_base_url.endswith("/api/v1")

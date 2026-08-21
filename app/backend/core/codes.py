@@ -34,6 +34,7 @@ class BusinessCode(IntEnum):
     MINERU_RESULT_INVALID = 50106
     FILE_STORAGE_UNAVAILABLE = 50107
     LANGCHAIN_UNAVAILABLE = 50108
+    TEXT_EMBEDDING_ERROR = 50201
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +71,7 @@ CODE_SPECS: dict[int, CodeSpec] = {
     BusinessCode.MINERU_RESULT_INVALID: CodeSpec(BusinessCode.MINERU_RESULT_INVALID, CommonCode.BAD_GATEWAY, "MinerU 解析结果异常"),
     BusinessCode.FILE_STORAGE_UNAVAILABLE: CodeSpec(BusinessCode.FILE_STORAGE_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "文件存储服务暂不可用"),
     BusinessCode.LANGCHAIN_UNAVAILABLE: CodeSpec(BusinessCode.LANGCHAIN_UNAVAILABLE, CommonCode.SERVICE_UNAVAILABLE, "LangChain 服务暂不可用"),
+    BusinessCode.TEXT_EMBEDDING_ERROR: CodeSpec(BusinessCode.TEXT_EMBEDDING_ERROR, CommonCode.BAD_GATEWAY, "文本向量计算异常"),
 }
 
 

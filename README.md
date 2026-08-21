@@ -114,6 +114,28 @@ conda activate rjagent-mineru
 mineru-api --host 127.0.0.1 --port 8001
 访问 http://127.0.0.1:8001/docs 验证服务
 
+### 向量模型部署
+1. 创建目录：F:\agent\Personal_journal_agent\data\tei
+2. docker部署：
+docker run --gpus all -p 8080:80 `
+  -v "F:\agent\Personal_journal_agent\data\tei:/data" `
+  --pull always `
+  ghcr.io/huggingface/text-embeddings-inference:cuda-1.9 `
+  --model-id Qwen/Qwen3-Embedding-0.6B
+3. 验证：
+$body = @{
+  inputs = @(
+    "Instruct: Given a Chinese or English question, retrieve relevant passages from English academic papers that answer the question`nQuery: 什么是宏观放置?",
+    "This paper studies macro placement with reinforcement learning."
+  )
+} | ConvertTo-Json -Compress
+
+Invoke-RestMethod `
+  -Uri "http://127.0.0.1:8080/embed" `
+  -Method Post `
+  -ContentType "application/json" `
+  -Body $body
+
 ### 配置主应用 
 1. 配置env 环境变量
 linux：cp .env.example app/backend/.env

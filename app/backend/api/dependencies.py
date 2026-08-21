@@ -39,4 +39,6 @@ def get_paper_service(request: Request) -> PaperService:
         metadata_store=request.app.state.metadata_store,
         file_store=request.app.state.file_store,
         mineru_client=request.app.state.mineru_client,
+        text_embedding_client=request.app.state.text_embedding_client,
+        vector_store=request.app.state.vector_store,
     )

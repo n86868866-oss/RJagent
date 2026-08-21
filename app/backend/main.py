@@ -13,7 +13,7 @@ from app.backend.core.exception_handlers import register_exception_handlers
 from app.backend.core.logging import configure_logging
 from app.backend.infrastructure.clients.llm_client import LLMClient
 from app.backend.infrastructure.clients.mineru_client import MinerUClient
-from app.backend.infrastructure.clients.text_embedding_client import TextEmbeddingClient
+from app.backend.infrastructure.clients.embedding_client import EmbeddingClient
 from app.backend.infrastructure.clients.visual_embedding_client import VisualEmbeddingClient
 from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
@@ -49,7 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             vector_store = await VectorStore.connect(settings)
             stack.push_async_callback(vector_store.close)
 
-            text_embedding_client = TextEmbeddingClient(settings)
+            text_embedding_client = EmbeddingClient(settings)
             stack.push_async_callback(text_embedding_client.close)
 
             llm_client = LLMClient.from_settings(settings)

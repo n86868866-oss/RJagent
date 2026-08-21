@@ -86,3 +86,7 @@ class FileStorageUnavailableError(AppError):
 class LangChainUnavailableError(AppError):
     def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
         super().__init__(BusinessCode.LANGCHAIN_UNAVAILABLE, context=context)
+
+class TextEmbeddingError(AppError):
+    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
+        super().__init__(BusinessCode.TEXT_EMBEDDING_ERROR, context=context)
