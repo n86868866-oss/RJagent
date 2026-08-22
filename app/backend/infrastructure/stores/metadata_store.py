@@ -50,7 +50,9 @@ class MetadataStore:
                 paper_name TEXT NOT NULL,
                 page_start INTEGER,
                 page_end INTEGER,
+                parent_title TEXT,
                 section_title TEXT,
+                section_level INTEGER,
                 section_index INTEGER,
                 text TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -93,7 +95,8 @@ class MetadataStore:
 
         columns = {
             "paper_name": "TEXT NOT NULL",
-            "header_title": "TEXT",
+            "parent_title": "TEXT",
+            "section_level": "INTEGER",
         }
 
         for name, definition in columns.items():
@@ -161,7 +164,7 @@ class MetadataStore:
             )
             await self.database.connection.executemany(
                 """
-                INSERT INTO paper_chunks (chunk_id,  chunk_index, paper_id, paper_name, page_start, page_end, section_title, section_index, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO paper_chunks (chunk_id,  chunk_index, paper_id, paper_name, page_start, page_end,  parent_title, section_title, section_level, section_index, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -171,7 +174,9 @@ class MetadataStore:
                         chunk.metadata.get("paper_name"),
                         chunk.metadata.get("page_start"),
                         chunk.metadata.get("page_end"),
+                        chunk.metadata.get("parent_title"),
                         chunk.metadata.get("section_title"),
+                        chunk.metadata.get("section_level"),
                         chunk.metadata.get("section_index"),
                         chunk.text,
                         now,

@@ -24,7 +24,7 @@ from app.backend.infrastructure.clients.embedding_client import EmbeddingClient
 from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.infrastructure.stores.vector_store import VectorStore
-from app.backend.services.papers.ingestion.chunker import Chunker
+from app.backend.services.papers.ingestion.chunker import Chunker, SectionMetadataMatchError
 from app.backend.services.papers.ingestion.normalizer import (
     build_metadata_documents,
     build_text_blocks,
@@ -34,7 +34,7 @@ from app.backend.services.papers.ingestion.normalizer import (
     normalize_paper_name_key,
     read_markdown,
 )
-from app.backend.services.papers.models import PaperParseResult, PaperDeleteResult
+from app.backend.services.papers.models import PaperChunk, PaperParseResult, PaperDeleteResult
 
 
 logger = logging.getLogger(__name__)
@@ -59,6 +59,7 @@ class PaperService:
         paper_id = uuid4().hex
         temp_pdf_path = await self.file_store.save_temporary_upload(paper_id=paper_id, filename=filename, payload=payload)
         paper_artifacts_may_exist = False
+        vectors_may_exist = False
 
         try:
             title_result = await self.parse_with_mineru(temp_pdf_path, start_page_id=0, end_page_id=1, stage="title_preparse")
@@ -89,17 +90,29 @@ class PaperService:
                 raise MinerUResultInvalidError(context={"stage": "full_parse", "reason": "markdown_missing"})
             markdown_docs = self.chunker.split_md_document(markdown_text)
             metadata_docs = build_metadata_documents(paper_id=paper_id, paper_name=paper_name, textblocks=text_blocks)
-            section_docs = self.chunker.build_section_documents(paper_id=paper_id, paper_name=paper_name, metadata_docs=metadata_docs, md_docs=markdown_docs)
 
-            chunk_docs = self.chunker.split_section_document(section_docs=section_docs)
-            paper_chunks = self.chunker.build_paper_chunks(paper_id=paper_id, chunk_docs=chunk_docs)
+            try:
+                section_docs = self.chunker.build_section_documents(paper_id=paper_id, paper_name=paper_name, metadata_docs=metadata_docs, md_docs=markdown_docs)
+                chunk_docs = self.chunker.split_section_document(section_docs=section_docs)
+                paper_chunks = self.chunker.build_paper_chunks(paper_id=paper_id, chunk_docs=chunk_docs)
+            except SectionMetadataMatchError as error:
+                raise MinerUResultInvalidError(
+                    context={
+                        "stage": "chunking",
+                        "reason": error.reason,
+                        "section_title": error.section_title,
+                    }
+                ) from error
+            except Exception as error:
+                raise LangChainUnavailableError(context={"stage": "chunking", "reason": "chunking_failed"}) from error
+
             if not paper_chunks:
                 raise LangChainUnavailableError(context={"stage": "chunking", "reason": "paper_chunks_empty"})
 
             logger.info("论文切分完成 论文名%s 文本块数%s 切分块数%s", paper_name, len(text_blocks), len(paper_chunks))
 
             try:
-                texts = [chunk.text for chunk in paper_chunks]
+                texts = [self.build_embedding_text(chunk) for chunk in paper_chunks]
                 vectors = await self.text_embedding_client.embed_documents(texts)
             except Exception as error:
                 raise TextEmbeddingError(context={"stage": "embedding", "reason": "embedding_failed"}) from error
@@ -108,6 +121,7 @@ class PaperService:
 
             try:
                 await self.vector_store.upsert_vectors(paper_chunks=paper_chunks, vectors=vectors)
+                vectors_may_exist = True
             except Exception as error:
                 raise QdrantUnavailableError(context={"stage": "vector_store", "reason": "upsert_text_chunks_failed"}) from error
 
@@ -142,8 +156,16 @@ class PaperService:
                 raise SQLiteUnavailableError(context={"operation": "create_paper"}) from error
         except Exception:
             await self.file_store.discard_temporary_upload(temp_pdf_path)
+            if vectors_may_exist:
+                try:
+                    await self.vector_store.delete_vectors(paper_id=paper_id)
+                except Exception as cleanup_error:
+                    logger.error("上传失败清理向量失败 paper_id=%s error=%s", paper_id, cleanup_error, exc_info=True)
             if paper_artifacts_may_exist:
-                await self.file_store.remove_paper_artifacts(paper_id)
+                try:
+                    await self.file_store.remove_paper_artifacts(paper_id)
+                except Exception as cleanup_error:
+                    logger.error("上传失败清理文件失败 paper_id=%s error=%s", paper_id, cleanup_error, exc_info=True)
             raise
         finally:
             await self.file_store.discard_temporary_upload(temp_pdf_path)
@@ -169,6 +191,11 @@ class PaperService:
             raise SQLiteUnavailableError(context={"operation": "delete_paper"}) from error
         if paper_record is None:
             raise AppError(CommonCode.NOT_FOUND, context={"paper_id": paper_id, "reason": "paper_not_found"})
+
+        try:
+            await self.vector_store.delete_vectors(paper_id=paper_id)
+        except Exception as error:
+            raise QdrantUnavailableError(context={"operation": "delete_vectors"}) from error
 
         try:
             await self.file_store.remove_paper_artifacts(paper_id)
@@ -201,6 +228,24 @@ class PaperService:
         max_bytes = self.settings.max_upload_mb * 1024 * 1024
         if len(payload) > max_bytes:
             raise AppError(CommonCode.PAYLOAD_TOO_LARGE, context={"filename": filename, "max_upload_mb": self.settings.max_upload_mb})
+
+    @staticmethod
+    def build_embedding_text(chunk: PaperChunk) -> str:
+        metadata = chunk.metadata
+        paper_name = metadata.get("paper_name")
+        parent_title = metadata.get("parent_title")
+        section_title = metadata.get("section_title")
+        section_level = metadata.get("section_level")
+
+        parts = [
+            f"Paper title: {paper_name}" if paper_name else "",
+            f"Parent section: {parent_title}" if parent_title else "",
+            f"Section title: {section_title}" if section_title else "",
+            f"Section level: {section_level}" if section_level is not None else "",
+            "Content:",
+            chunk.text,
+        ]
+        return "\n".join(part for part in parts if part)
 
     async def paper_exists(self, paper_name_key: str) -> bool:
         try:

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
-from qdrant_client.models import PointStruct
+from qdrant_client.models import PointStruct, FieldCondition, Filter, MatchValue
 
 from app.backend.config import Settings
 from app.backend.services.papers.models import PaperChunk
@@ -102,6 +102,8 @@ class VectorStore:
                     "chunk_index": chunk.chunk_index,
                     "paper_name": chunk.metadata.get("paper_name"),
                     "section_title": chunk.metadata.get("section_title"),
+                    "parent_title": chunk.metadata.get("parent_title"),
+                    "section_level": chunk.metadata.get("section_level"),
                     "section_index": chunk.metadata.get("section_index"),
                     "page_start": chunk.metadata.get("page_start"),
                     "page_end": chunk.metadata.get("page_end"),
@@ -113,6 +115,21 @@ class VectorStore:
         await self.client.upsert(
             collection_name=self.settings.qdrant_text_collection,
             points=points,
+            wait=True,
+        )
+
+    async def delete_vectors(self, *, paper_id: str) -> None:
+        """Delete all vectors for a given paper_id from the Qdrant collection."""
+        await self.client.delete(
+            collection_name=self.settings.qdrant_text_collection,
+            points_selector=Filter(
+                must=[
+                    FieldCondition(
+                        key="paper_id",
+                        match=MatchValue(value=paper_id),
+                    )
+                ]
+            ),
             wait=True,
         )
 
