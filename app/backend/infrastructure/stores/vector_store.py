@@ -100,7 +100,9 @@ class VectorStore:
                     "paper_id": chunk.paper_id,
                     "chunk_id": chunk.chunk_id,
                     "chunk_index": chunk.chunk_index,
+                    "source_order": chunk.metadata.get("source_order"),
                     "paper_name": chunk.metadata.get("paper_name"),
+                    "section_id": chunk.metadata.get("section_id"),
                     "section_title": chunk.metadata.get("section_title"),
                     "parent_title": chunk.metadata.get("parent_title"),
                     "section_level": chunk.metadata.get("section_level"),
@@ -108,6 +110,9 @@ class VectorStore:
                     "page_start": chunk.metadata.get("page_start"),
                     "page_end": chunk.metadata.get("page_end"),
                     "text": chunk.text,
+                    "content_type": chunk.metadata.get("content_type"),
+                    "caption": chunk.metadata.get("caption"),
+                    "asset_path": chunk.metadata.get("asset_path"),
                 },
             )
             for chunk, vector in zip(paper_chunks, vectors, strict=True)

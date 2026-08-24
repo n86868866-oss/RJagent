@@ -50,11 +50,16 @@ class MetadataStore:
                 paper_name TEXT NOT NULL,
                 page_start INTEGER,
                 page_end INTEGER,
+                section_id TEXT,
                 parent_title TEXT,
                 section_title TEXT,
                 section_level INTEGER,
                 section_index INTEGER,
                 text TEXT NOT NULL,
+                caption TEXT,
+                asset_path TEXT,
+                source_order INTEGER,
+                content_type TEXT NOT NULL DEFAULT 'text',
                 created_at TEXT NOT NULL,
                 FOREIGN KEY(paper_id) REFERENCES papers(paper_id) ON DELETE CASCADE
             )
@@ -65,6 +70,12 @@ class MetadataStore:
             """
             CREATE INDEX IF NOT EXISTS idx_paper_chunks_paper_id
             ON paper_chunks(paper_id, chunk_index)
+            """
+        )
+        await self.database.connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_paper_chunks_section_id
+            ON paper_chunks(paper_id, section_id, chunk_index)
             """
         )
         await self.database.connection.commit()
@@ -95,8 +106,13 @@ class MetadataStore:
 
         columns = {
             "paper_name": "TEXT NOT NULL",
+            "section_id": "TEXT",
             "parent_title": "TEXT",
             "section_level": "INTEGER",
+            "source_order": "INTEGER",
+            "caption": "TEXT",
+            "asset_path": "TEXT",
+            "content_type": "TEXT NOT NULL DEFAULT 'text'",
         }
 
         for name, definition in columns.items():
@@ -164,7 +180,7 @@ class MetadataStore:
             )
             await self.database.connection.executemany(
                 """
-                INSERT INTO paper_chunks (chunk_id,  chunk_index, paper_id, paper_name, page_start, page_end,  parent_title, section_title, section_level, section_index, text, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO paper_chunks (chunk_id, chunk_index, paper_id, paper_name, page_start, page_end, section_id, parent_title, section_title, section_level, section_index, text, source_order, caption, asset_path, content_type, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     (
@@ -174,11 +190,16 @@ class MetadataStore:
                         chunk.metadata.get("paper_name"),
                         chunk.metadata.get("page_start"),
                         chunk.metadata.get("page_end"),
+                        chunk.metadata.get("section_id"),
                         chunk.metadata.get("parent_title"),
                         chunk.metadata.get("section_title"),
                         chunk.metadata.get("section_level"),
                         chunk.metadata.get("section_index"),
                         chunk.text,
+                        chunk.metadata.get("source_order"),
+                        chunk.metadata.get("caption"),
+                        chunk.metadata.get("asset_path"),
+                        chunk.metadata.get("content_type"),
                         now,
                     )
                     for chunk in paper_chunks

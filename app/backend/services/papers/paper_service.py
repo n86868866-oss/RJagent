@@ -24,9 +24,10 @@ from app.backend.infrastructure.clients.embedding_client import EmbeddingClient
 from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.infrastructure.stores.vector_store import VectorStore
-from app.backend.services.papers.ingestion.chunker import Chunker, SectionMetadataMatchError
+from app.backend.services.papers.ingestion.chunker import Chunker
+from app.backend.services.papers.ingestion.doc_clean import MarkdownCleaner
 from app.backend.services.papers.ingestion.normalizer import (
-    build_metadata_documents,
+    load_content_list,
     build_text_blocks,
     extract_document_metadata,
     extract_paper_name,
@@ -51,6 +52,7 @@ class PaperService:
         self.text_embedding_client = text_embedding_client
         self.vector_store = vector_store
         self.chunker = Chunker(chunk_size=settings.chunk_size_chars, chunk_overlap=settings.chunk_overlap_chars)
+        self.markdown_cleaner = MarkdownCleaner()
 
     async def upload_pdf(self, *, filename: str, content_type: str | None, payload: bytes) -> PaperParseResult:
         self.validate_pdf_upload(filename=filename, content_type=content_type, payload=payload)
@@ -86,23 +88,17 @@ class PaperService:
             logger.info("MinerU全文解析完成 论文名%s paper_id%s 文本块数%s", paper_name, paper_id, len(text_blocks))
 
             markdown_text = read_markdown(full_result)
+            content_list = load_content_list(full_result)
             if not markdown_text:
                 raise MinerUResultInvalidError(context={"stage": "full_parse", "reason": "markdown_missing"})
-            markdown_docs = self.chunker.split_md_document(markdown_text)
-            metadata_docs = build_metadata_documents(paper_id=paper_id, paper_name=paper_name, textblocks=text_blocks)
-
+            if not isinstance(content_list, list):
+                raise MinerUResultInvalidError(context={"stage": "full_parse", "reason": "content_list_invalid"})
             try:
-                section_docs = self.chunker.build_section_documents(paper_id=paper_id, paper_name=paper_name, metadata_docs=metadata_docs, md_docs=markdown_docs)
-                chunk_docs = self.chunker.split_section_document(section_docs=section_docs)
+                text_docs, structured_docs = self.markdown_cleaner.clean(markdown_text, content_list=content_list, paper_id=paper_id, paper_name=paper_name)
+                chunk_docs = self.chunker.split_documents(text_docs, structured_docs)
                 paper_chunks = self.chunker.build_paper_chunks(paper_id=paper_id, chunk_docs=chunk_docs)
-            except SectionMetadataMatchError as error:
-                raise MinerUResultInvalidError(
-                    context={
-                        "stage": "chunking",
-                        "reason": error.reason,
-                        "section_title": error.section_title,
-                    }
-                ) from error
+            except ValueError as error:
+                raise MinerUResultInvalidError(context={"stage": "chunking", "reason": str(error)}) from error
             except Exception as error:
                 raise LangChainUnavailableError(context={"stage": "chunking", "reason": "chunking_failed"}) from error
 
