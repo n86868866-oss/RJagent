@@ -4,11 +4,15 @@
 
 上传 PDF
     ↓
-文件校验与去重
+格式校验与重复判断
     ↓
 PDF 解析
     ↓
+数据清洗，正文、图、表分流
+    ↓
 章节识别与文本分块
+    ↓
+元数据入SQLite
     ↓
 生成 Embedding
     ↓
@@ -40,7 +44,6 @@ research-journey-agent/
 │   │   ├── clients/
 │   │   │   ├── llm_client.py
 │   │   │   ├── mineru_client.py
-│   │   │   ├── pymupdf_client.py
 │   │   │   ├── text_embedding_client.py
 │   │   │   └── visual_embedding_client.py
 │   │   │

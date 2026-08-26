@@ -14,6 +14,7 @@ from app.backend.core.logging import configure_logging
 from app.backend.infrastructure.clients.llm_client import LLMClient
 from app.backend.infrastructure.clients.mineru_client import MinerUClient
 from app.backend.infrastructure.clients.embedding_client import EmbeddingClient
+from app.backend.infrastructure.clients.reranker_client import RerankerClient
 from app.backend.infrastructure.clients.visual_embedding_client import VisualEmbeddingClient
 from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
@@ -52,6 +53,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             text_embedding_client = EmbeddingClient(settings)
             stack.push_async_callback(text_embedding_client.close)
 
+            reranker_client = RerankerClient(settings=settings)
+            stack.push_async_callback(reranker_client.close)
+
             llm_client = LLMClient.from_settings(settings)
             if llm_client is not None:
                 stack.push_async_callback(llm_client.close)
@@ -70,7 +74,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             app.state.llm_client = llm_client
             app.state.mineru_client = mineru_client
             app.state.visual_embedding_client = visual_embedding_client
-
+            app.state.reranker_client = reranker_client
             app.state.ready = True
             startup_completed = True
 

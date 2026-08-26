@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Request, UploadFile, status, Response
+from fastapi import APIRouter, Depends, File, Request, UploadFile, status
 
 from app.backend.api.dependencies import get_paper_service
 from app.backend.api.schemas.papers import PaperDocumentMetadataData, PaperParsedFilesData, PaperUploadData, PaperDeleteData

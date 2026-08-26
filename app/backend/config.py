@@ -331,6 +331,44 @@ class Settings(BaseSettings):
     # -------------------------------------------------------------------------
     # Visual embedding
     # -------------------------------------------------------------------------
+    reranker_base_url: str = Field(
+        default="http://127.0.0.1:8081",
+        title="Reranker base URL",
+        description="Base URL of the reranker service.",
+    )
+    reranker_model: str = Field(
+        default="BAAI/bge-reranker-v2-m3",
+        title="Reranker model",
+        description="Model used for reranking documents.",
+    )
+    reranker_timeout_seconds: float = Field(
+        default=60.0,
+        gt=0,
+        title="Reranker timeout",
+        description="Maximum duration of one reranking request in seconds.",
+    )
+    reranker_max_retries: int = Field(
+        default=2,
+        ge=0,
+        title="Reranker retry count",
+        description="Maximum retry count after a failed reranking request.",
+    )
+
+    retriever_candidate_top_k: int = Field(
+        default=20,
+        ge=1,
+        title="Retriever candidate top K",
+        description="Number of candidates returned by the initial retrieval stage.",
+    )
+    retriever_final_top_k: int = Field(
+        default=6,
+        ge=1,
+        title="Retriever final top K",
+        description="Number of candidates retained for the final LLM context.",
+    )
+    # -------------------------------------------------------------------------
+    # Visual embedding
+    # -------------------------------------------------------------------------
 
     visual_embedding_enabled: bool = Field(
         default=False,

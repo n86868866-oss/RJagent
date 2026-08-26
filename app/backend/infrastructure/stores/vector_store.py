@@ -138,6 +138,16 @@ class VectorStore:
             wait=True,
         )
 
+    async def query_text_chunks(self, *, query_vector: list[float], limit: int):
+        result = await self.client.query_points(
+            collection_name=self.settings.qdrant_text_collection,
+            query=query_vector,
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return result.points
+
     async def ping(self) -> None:
         """Query Qdrant and validate every enabled collection dimension."""
 

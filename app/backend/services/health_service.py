@@ -59,7 +59,7 @@ class HealthService:
             )
         }
 
-        names = ("filesystem", "sqlite", "qdrant", "text_embedding", "mineru", "llm", "pymupdf")
+        names = ("filesystem", "sqlite", "qdrant", "text_embedding", "reranker", "mineru", "llm", "pymupdf")
         checks = (
             self.probe_state_resource(
                 component="filesystem",
@@ -87,6 +87,13 @@ class HealthService:
                 state_name="text_embedding_client",
                 probe_name="probe",
                 probe="real_embedding_request",
+                required=True,
+            ),
+            self.probe_state_resource(
+                component="reranker",
+                state_name="reranker_client",
+                probe_name="probe",
+                probe="real_reranker_request",
                 required=True,
             ),
             self.probe_state_resource(
