@@ -56,7 +56,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             reranker_client = RerankerClient(settings=settings)
             stack.push_async_callback(reranker_client.close)
 
-            llm_client = LLMClient.from_settings(settings)
+            llm_client = LLMClient(settings)
             if llm_client is not None:
                 stack.push_async_callback(llm_client.close)
 

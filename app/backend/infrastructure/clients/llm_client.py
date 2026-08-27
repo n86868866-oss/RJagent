@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from typing import Any
+from collections.abc import Sequence
+
+from openai import AsyncOpenAI
+from openai.types.chat import ChatCompletionMessage
 
 import logging
 
@@ -16,31 +20,47 @@ class LLMProtocolError(RuntimeError):
 class LLMClient:
     """Shared OpenAI-compatible client for chat generation."""
 
-    def __init__(self, client: Any, model: str) -> None:
-        self.client = client
-        self.model = model
-
-    @classmethod
-    def from_settings(cls, settings: Settings) -> "LLMClient | None":
+    def __init__(self, settings: Settings) -> None:
         if not settings.llm_base_url or not settings.llm_model or not settings.llm_api_key:
-            return None
+            raise ValueError("LLMClient requires llm_base_url, llm_model, and llm_api_key to be set in settings.")
+        self.model = settings.llm_model
+        self.client = AsyncOpenAI(
+                    api_key=settings.llm_api_key.get_secret_value(),
+                    base_url=settings.llm_base_url,
+                    timeout=settings.llm_timeout_seconds,
+                    max_retries=settings.llm_max_retries,
+                )
+        self.timeout_seconds = settings.llm_timeout_seconds
+        self.max_retries = settings.llm_max_retries
+        self.temperature = settings.llm_temperature
 
-        try:
-            from openai import AsyncOpenAI
-        except ImportError as error:  # pragma: no cover - environment failure
-            raise RuntimeError(
-                "The openai package is required for the OpenAI-compatible LLM client."
-            ) from error
-
-        return cls(
-            client=AsyncOpenAI(
-                api_key=settings.llm_api_key.get_secret_value(),
-                base_url=settings.llm_base_url.rstrip("/"),
-                timeout=settings.llm_timeout_seconds,
-                max_retries=settings.llm_max_retries,
-            ),
-            model=settings.llm_model,
+    async def complete(self, *, messages: Sequence[dict[str, Any]], max_tokens: int = 1024, tools: list[dict[str, Any]] | None = None, tool_choice: str = "auto") -> ChatCompletionMessage:
+        response = await self.client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            tools=tools,
+            tool_choice=tool_choice,
+            parallel_tool_calls=False,
+            max_tokens=max_tokens,
+            temperature=self.temperature,
+            top_p=0.8,
+            extra_body={"top_k": 20},
         )
+
+        if not response.choices:
+            raise LLMProtocolError("LLM completion returned no choices.")
+
+        logger.info(
+            "大语言模型补全成功 模型:%s 提示token数:%s 补全token数:%s 总token数:%s",
+            self.model,
+            response.usage.prompt_tokens if response.usage else None,
+            response.usage.completion_tokens if response.usage else None,
+            response.usage.total_tokens if response.usage else None,
+        )
+
+        logger.debug("LLM completion response: %s", response)
+
+        return response.choices[0].message
 
     async def probe(self) -> None:
         """Make one minimal real chat-completion request."""

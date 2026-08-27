@@ -27,7 +27,6 @@ Research Journey Agent 是一个以个人研究课题为中心的文献管理与
 - [ ] PDF 文件上传
 - [ ] PDF 文件列表展示
 - [ ] PDF 删除和重新索引
-- [ ] PDF 文本解析
 - [ ] 章节感知 + 字符递归文本分块
 - [ ] 文本索引 + 视觉索引双嵌入模型
 - [ ] Qdrant 向量存储
@@ -76,9 +75,10 @@ Qdrant
 + FastAPI
 + SQLite
 + Qdrant
-+ PyMuPDF和MinerU
++ MinerU
 + LangChain
 + text-embedding-v4和bge-visualized-m3
++ Cross-Encoder
 + OpenAI-compatible LLM API
 + Jinja2
 + 原生 HTML、CSS 和 JavaScript
@@ -119,6 +119,18 @@ mineru-api --host 127.0.0.1 --port 8001
 2. docker部署：
 docker run --gpus all --name qwen3-embedding-0.6B -p 8080:80 -v "F:\agent\Personal_journal_agent\data\tei\models--Qwen--Qwen3-Embedding-0.6B:/data" --pull always ghcr.io/huggingface/text-embeddings-inference:cuda-1.9 --model-id Qwen/Qwen3-Embedding-0.6B
 访问 http://127.0.0.1:8080/docs 查看嵌入向量交互
+
+### cross-encoder重排部署
+1. data\tei-reranker
+2. docker run --name tei-reranker --gpus all -p 8081:80 -v "F:\agent\Personal_journal_agent\data\tei-reranker:/data" --restart unless-stopped --pull always ghcr.io/huggingface/text-embeddings-inference:cuda-1.9 --model-id BAAI/bge-reranker-v2-m3 --max-client-batch-size 32
+
+### vLLM部署(v0.28.0)
+1. 创建目录：data\vllm\huggingface
+2. docker部署：
+docker run -d --name qwen3-14b-awq --gpus all -p 127.0.0.1:8002:8000 --ipc=host -e VLLM_USE_V2_MODEL_RUNNER=0 -e HF_HUB_DISABLE_XET=1 -v "F:\agent\Personal_journal_agent\data\vLLM\huggingface:/root/.cache/huggingface" -v "vllm-cache:/root/.cache/vllm" vllm/vllm-openai:latest Qwen/Qwen3-14B-AWQ --max-model-len 8192 --gpu-memory-utilization 0.55 --max-num-seqs 2 --reasoning-parser qwen3 --enable-auto-tool-choice --tool-call-parser hermes
+3. 查看镜像版本
+docker image inspect vllm/vllm-openai:latest --format '{{index .RepoDigests 0}}'
+4. 访问 http://127.0.0.1:8002/docs 验证服务
 
 ### 配置主应用 
 1. 配置env 环境变量

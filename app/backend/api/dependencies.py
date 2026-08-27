@@ -9,6 +9,7 @@ from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.services.health_service import HealthService
 from app.backend.services.papers.paper_service import PaperService
 from app.backend.services.chat.retriver import Retriever
+from app.backend.services.chat.chat import ChatService
 
 
 def get_settings(request: Request) -> Settings:
@@ -49,5 +50,12 @@ def get_retriever_service(request: Request) -> Retriever:
         embedding_client=request.app.state.text_embedding_client,
         vector_store=request.app.state.vector_store,
         reranker_client=request.app.state.reranker_client,
+        settings=request.app.state.settings,
+    )
+
+def get_chat_service(request: Request) -> ChatService:
+    return ChatService(
+        retriever=get_retriever_service(request),
+        llm_client=request.app.state.llm_client,
         settings=request.app.state.settings,
     )

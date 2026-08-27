@@ -21,9 +21,8 @@ def configure_logging(settings: Settings) -> None:
     log_dir.mkdir(parents=True, exist_ok=True)
     log_file = log_dir / "app.log"
 
-    log_format = (
-        "%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s"
-    )
+    log_format = ("%(asctime)s %(levelname)s %(name)s request_id=%(request_id)s %(message)s")
+
     logging.config.dictConfig(
         {
             "version": 1,
@@ -86,6 +85,7 @@ def configure_logging(settings: Settings) -> None:
                     "level": "WARNING",
                     "propagate": False,
                 },
+                
             },
         }
     )
