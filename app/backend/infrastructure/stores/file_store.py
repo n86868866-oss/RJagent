@@ -23,7 +23,6 @@ class FileStore:
                 "data": settings.project_path(settings.data_dir),
                 "raw": settings.project_path(settings.raw_pdf_dir),
                 "parsed": settings.project_path(settings.parsed_document_dir),
-                "assets": settings.project_path(settings.document_asset_dir),
                 "qdrant": settings.project_path(settings.qdrant_path),
             }
         )
@@ -78,7 +77,6 @@ class FileStore:
         await asyncio.gather(
             asyncio.to_thread(self.remove_tree_within, self.directories["raw"] / paper_id, self.directories["raw"]),
             asyncio.to_thread(self.remove_tree_within, self.directories["parsed"] / paper_id, self.directories["parsed"]),
-            asyncio.to_thread(self.remove_tree_within, self.directories["assets"] / paper_id, self.directories["assets"]),
         )
 
     async def save_mineru_parse_files(self, *, paper_id: str, files: dict[str, bytes], normalized_text: str) -> dict[str, str]:
@@ -87,7 +85,7 @@ class FileStore:
         saved: dict[str, Path] = {}
         selected_files = {
             "markdown": self.select_file(files, suffix=".md"),
-            "content_list": self.select_file(files, contains="content_list", suffix=".json"),
+            "content_list": self.select_legacy_content_list(files),
             "middle": self.select_file(files, contains="middle", suffix=".json"),
             "layout_pdf": self.select_file(files, contains="layout", suffix=".pdf"),
             "span_pdf": self.select_file(files, contains="span", suffix=".pdf"),
@@ -105,6 +103,12 @@ class FileStore:
                 continue
             saved[key] = target_dir / canonical_names[key]
             await asyncio.to_thread(self.write_bytes, saved[key], item[1])
+
+        image_files = self.select_image_files(files)
+        for relative_path, image_payload in image_files.items():
+            await asyncio.to_thread(self.write_bytes, target_dir / Path(relative_path), image_payload)
+        if image_files:
+            saved["images_dir"] = target_dir / "images"
 
         saved["normalized_text"] = target_dir / "normalized_text.txt"
         await asyncio.to_thread(self.write_text, saved["normalized_text"], normalized_text)
@@ -151,6 +155,28 @@ class FileStore:
                 continue
             return name, payload
         return None
+
+    @staticmethod
+    def select_legacy_content_list(files: dict[str, bytes]) -> tuple[str, bytes] | None:
+        for name, payload in files.items():
+            normalized = name.replace("\\", "/").split("/")[-1].lower()
+            if normalized == "content_list.json" or normalized.endswith("_content_list.json"):
+                return name, payload
+        return None
+
+    @staticmethod
+    def select_image_files(files: dict[str, bytes]) -> dict[str, bytes]:
+        selected: dict[str, bytes] = {}
+        for name, payload in files.items():
+            parts = [part for part in name.replace("\\", "/").split("/") if part]
+            if "images" not in parts:
+                continue
+            image_index = len(parts) - 1 - parts[::-1].index("images")
+            relative_parts = parts[image_index:]
+            if len(relative_parts) < 2 or any(part in {".", ".."} for part in relative_parts):
+                continue
+            selected["/".join(relative_parts)] = payload
+        return selected
 
     @staticmethod
     def safe_filename(filename: str, *, fallback: str) -> str:

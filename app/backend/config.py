@@ -111,12 +111,7 @@ class Settings(BaseSettings):
     parsed_document_dir: Path = Field(
         default=Path("./data/parsed"),
         title="Parsed document directory",
-        description="Directory used to store parsed Markdown and JSON files.",
-    )
-    document_asset_dir: Path = Field(
-        default=Path("./data/assets"),
-        title="Document asset directory",
-        description="Directory used to store extracted figures, tables, and assets.",
+        description="Directory used to store parsed Markdown, JSON, and extracted image files.",
     )
     sqlite_path: Path = Field(
         default=Path("./data/app.db"),

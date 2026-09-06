@@ -8,6 +8,7 @@ class PaperParsedFilesData(BaseModel):
     content_list: str | None = None
     middle: str | None = None
     normalized_text: str
+    images_dir: str | None = None
     layout_pdf: str | None = None
     span_pdf: str | None = None
 

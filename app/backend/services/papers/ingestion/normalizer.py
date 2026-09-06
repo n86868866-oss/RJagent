@@ -105,8 +105,7 @@ def build_metadata_documents(*, paper_id: str, paper_name: str, textblocks: list
                     "paper_name": paper_name,
                     "section_index": current_section_index or 0,
                     "section_title": current_section_title or "未识别章节",
-                    "page_start": min(current_pages) if current_pages else None,
-                    "page_end": max(current_pages) if current_pages else None,
+                    "page_numbers": sorted(set(current_pages)),
                 }
             )
         )
@@ -128,10 +127,9 @@ def build_metadata_documents(*, paper_id: str, paper_name: str, textblocks: list
 
         current_texts.append(block.text)
 
-        for key in ("page_start", "page_end"):
-            page = block.metadata.get(key)
-            if isinstance(page, int):
-                current_pages.append(page)
+        pages = block.metadata.get("page_numbers", [])
+        if isinstance(pages, list):
+            current_pages.extend(page for page in pages if isinstance(page, int) and not isinstance(page, bool))
 
     flush_current_section()
     return metadata_docs
@@ -176,7 +174,7 @@ def normalize_title(value: Any) -> str:
 
 
 def load_content_list(result: Any) -> Any | None:
-    item = select_file(result.files, contains="content_list", suffix=".json")
+    item = select_legacy_content_list(result.files)
     if item is not None:
         try:
             return json.loads(item[1].decode("utf-8"))
@@ -188,6 +186,14 @@ def load_content_list(result: Any) -> Any | None:
             value = result.payload.get(key)
             if isinstance(value, (list, dict)):
                 return value
+    return None
+
+
+def select_legacy_content_list(files: dict[str, bytes]) -> tuple[str, bytes] | None:
+    for name, payload in files.items():
+        normalized = name.replace("\\", "/").split("/")[-1].lower()
+        if normalized == "content_list.json" or normalized.endswith("_content_list.json"):
+            return name, payload
     return None
 
 
@@ -252,8 +258,7 @@ def blocks_from_content_list(content: Any) -> list[TextBlock]:
             TextBlock(
                 text=text,
                 metadata={
-                    "page_start": page,
-                    "page_end": page,
+                    "page_numbers": [page] if page is not None else [],
                     "section_title": section_title,
                     "section_index": section_index,
                     "block_type": block_type or "text",
@@ -674,8 +679,7 @@ def blocks_from_markdown(result: Any) -> list[TextBlock]:
             TextBlock(
                 text=clean_title(text) if text.startswith("#") else text,
                 metadata={
-                    "page_start": None,
-                    "page_end": None,
+                    "page_numbers": [],
                     "section_title": section_title,
                     "section_index": section_index,
                     "block_type": "markdown",

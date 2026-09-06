@@ -83,7 +83,7 @@ class MinerUClient:
         if not isinstance(payload, dict):
             raise MinerUProtocolError("MinerU health endpoint returned an invalid JSON object.")
 
-    async def parse_pdf(self, file_path: Path, *, start_page_id: int | None = None, end_page_id: int | None = None) -> MinerUParseResult:
+    async def parse_pdf(self, file_path: Path, *, start_page_id: int | None = None, end_page_id: int | None = None, return_images: bool = False) -> MinerUParseResult:
         """Parse one PDF through MinerU's HTTP API."""
 
         data: dict[str, str] = {
@@ -92,6 +92,7 @@ class MinerUClient:
             "return_md": "true",
             "return_middle_json": "true",
             "return_content_list": "true",
+            "return_images": str(return_images).lower(),
             "response_format_zip": "true",
             "return_original_file": "false",
         }

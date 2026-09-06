@@ -19,8 +19,7 @@ async def query_chat(request: ChatQueryRequest, servicer: Retriever = Depends(ge
         parent_title=result.candidate.payload.get("parent_title"),
         chunk_id=result.candidate.payload.get("chunk_id"),
         text=result.candidate.payload.get("text"),
-        page_start=result.candidate.payload.get("page_start"),
-        page_end=result.candidate.payload.get("page_end"),
+        page_numbers=result.candidate.payload.get("page_numbers") or [],
         dense_score=result.candidate.dense_score,
         rerank_score=result.rerank_score,
     ) for result in results
@@ -39,8 +38,7 @@ async def chat_query(request: ChatQueryRequest, servicer: ChatService = Depends(
                 paper_name=source.paper_name,
                 section_title=source.section_title,
                 chunk_id=source.chunk_id,
-                page_start=source.page_start,
-                page_end=source.page_end
+                page_numbers=source.page_numbers
             ) for source in results.sources
         ]
     )

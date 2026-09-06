@@ -142,7 +142,7 @@ class ChatService:
                 f"[证据{evidence_id}]",
                 f"论文：{payload.get('paper_name')}",
                 f"章节：{payload.get('section_title')}",
-                f"页码：{payload.get('page_start')}-{payload.get('page_end')}",
+                f"页码：{payload.get('page_numbers') or '未知'}",
                 f"内容：{payload.get('text')}",
             ]))
 
@@ -170,8 +170,8 @@ class ChatService:
                 paper_id=str(payload.get("paper_id")),
                 chunk_id=str(payload.get("chunk_id")),
                 section_title=str(payload.get("section_title") or "未识别章节"),
-                page_start=payload.get("page_start"),
-                page_end=payload.get("page_end"),
+                page_numbers=payload.get("page_numbers") or []
             ))
 
         return ChatAnswerResult(answer=answer, sources=sources)
+    

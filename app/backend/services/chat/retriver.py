@@ -57,6 +57,7 @@ class Retriever:
             f"Paper title: {payload.get('paper_name')}",
             f"Parent section: {payload.get('parent_title')}",
             f"Section title: {payload.get('section_title')}",
+            f"Caption: {payload.get('caption')}",
             "Content:",
             str(payload.get("text") or ""),
         ]

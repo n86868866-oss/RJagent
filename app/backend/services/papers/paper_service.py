@@ -25,7 +25,7 @@ from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.infrastructure.stores.vector_store import VectorStore
 from app.backend.services.papers.ingestion.chunker import Chunker
-from app.backend.services.papers.ingestion.doc_clean import MarkdownCleaner
+from app.backend.services.papers.ingestion.document_builder import MinerUDocumentBuilder
 from app.backend.services.papers.ingestion.normalizer import (
     load_content_list,
     build_text_blocks,
@@ -33,7 +33,6 @@ from app.backend.services.papers.ingestion.normalizer import (
     extract_paper_name,
     join_block_text,
     normalize_paper_name_key,
-    read_markdown,
 )
 from app.backend.services.papers.models import PaperChunk, PaperParseResult, PaperDeleteResult
 
@@ -52,7 +51,7 @@ class PaperService:
         self.text_embedding_client = text_embedding_client
         self.vector_store = vector_store
         self.chunker = Chunker(chunk_size=settings.chunk_size_chars, chunk_overlap=settings.chunk_overlap_chars)
-        self.markdown_cleaner = MarkdownCleaner()
+        self.document_builder = MinerUDocumentBuilder()
 
     async def upload_pdf(self, *, filename: str, content_type: str | None, payload: bytes) -> PaperParseResult:
         self.validate_pdf_upload(filename=filename, content_type=content_type, payload=payload)
@@ -76,7 +75,7 @@ class PaperService:
 
             logger.info("MinerU标题预解析完成 论文名%s", paper_name)
 
-            full_result = await self.parse_with_mineru(temp_pdf_path, stage="full_parse")
+            full_result = await self.parse_with_mineru(temp_pdf_path, stage="full_parse", return_images=True)
             text_blocks = build_text_blocks(full_result)
             if not text_blocks:
                 raise MinerUResultInvalidError(context={"stage": "full_parse", "reason": "text_blocks_empty"})
@@ -87,14 +86,11 @@ class PaperService:
 
             logger.info("MinerU全文解析完成 论文名%s paper_id%s 文本块数%s", paper_name, paper_id, len(text_blocks))
 
-            markdown_text = read_markdown(full_result)
             content_list = load_content_list(full_result)
-            if not markdown_text:
-                raise MinerUResultInvalidError(context={"stage": "full_parse", "reason": "markdown_missing"})
             if not isinstance(content_list, list):
                 raise MinerUResultInvalidError(context={"stage": "full_parse", "reason": "content_list_invalid"})
             try:
-                text_docs, structured_docs = self.markdown_cleaner.clean(markdown_text, content_list=content_list, paper_id=paper_id, paper_name=paper_name)
+                text_docs, structured_docs = self.document_builder.build(content_list=content_list, paper_id=paper_id, paper_name=paper_name)
                 chunk_docs = self.chunker.split_documents(text_docs, structured_docs)
                 paper_chunks = self.chunker.build_paper_chunks(paper_id=paper_id, chunk_docs=chunk_docs)
             except ValueError as error:
@@ -232,12 +228,15 @@ class PaperService:
         parent_title = metadata.get("parent_title")
         section_title = metadata.get("section_title")
         section_level = metadata.get("section_level")
+        caption = metadata.get("caption")
+        content_type = metadata.get("content_type")
 
         parts = [
             f"Paper title: {paper_name}" if paper_name else "",
             f"Parent section: {parent_title}" if parent_title else "",
             f"Section title: {section_title}" if section_title else "",
             f"Section level: {section_level}" if section_level is not None else "",
+            f"Table caption: {caption}" if content_type == "table" and caption else "",
             "Content:",
             chunk.text,
         ]
@@ -249,9 +248,9 @@ class PaperService:
         except Exception as error:
             raise SQLiteUnavailableError(context={"operation": "paper_name_exists"}) from error
 
-    async def parse_with_mineru(self, file_path: Path, *, stage: str, start_page_id: int | None = None, end_page_id: int | None = None):
+    async def parse_with_mineru(self, file_path: Path, *, stage: str, start_page_id: int | None = None, end_page_id: int | None = None, return_images: bool = False):
         try:
-            return await self.mineru_client.parse_pdf(file_path, start_page_id=start_page_id, end_page_id=end_page_id)
+            return await self.mineru_client.parse_pdf(file_path, start_page_id=start_page_id, end_page_id=end_page_id, return_images=return_images)
         except MinerUServiceError as error:
             context: dict[str, object] = {
                 "stage": stage,
@@ -274,7 +273,7 @@ class PaperService:
 
     @staticmethod
     def count_pages(text_blocks) -> int | None:
-        pages = [page for block in text_blocks for page in (block.metadata.get("page_start"), block.metadata.get("page_end")) if isinstance(page, int)]
+        pages = [page for block in text_blocks for page in block.metadata.get("page_numbers", []) if isinstance(page, int) and not isinstance(page, bool)]
         if not pages:
             return None
         return max(pages)

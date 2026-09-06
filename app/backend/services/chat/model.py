@@ -7,8 +7,7 @@ class AnswerSource:
     paper_name: str
     chunk_id: str
     section_title: str
-    page_start: int | None
-    page_end: int | None
+    page_numbers: list[int]
 
 
 @dataclass(frozen=True, slots=True)

@@ -11,8 +11,7 @@ class Candidate(BaseModel):
     section_title: str
     chunk_id: str
     text: str
-    page_start: int | None
-    page_end: int | None
+    page_numbers: list[int] = Field(default_factory=list)
     dense_score: float
     rerank_score: float
 
@@ -25,8 +24,7 @@ class AnswerCandidate(BaseModel):
     paper_name: str
     section_title: str
     chunk_id: str
-    page_start: int | None
-    page_end: int | None
+    page_numbers: list[int] = Field(default_factory=list)
 
 class ChatAnswerResponse(BaseModel):
     answer: str
