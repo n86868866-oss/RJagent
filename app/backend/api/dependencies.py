@@ -42,12 +42,14 @@ def get_paper_service(request: Request) -> PaperService:
         file_store=request.app.state.file_store,
         mineru_client=request.app.state.mineru_client,
         text_embedding_client=request.app.state.text_embedding_client,
+        bm25_encoder=request.app.state.bm25_encoder,
         vector_store=request.app.state.vector_store,
     )
 
 def get_retriever_service(request: Request) -> Retriever:
     return Retriever(
         embedding_client=request.app.state.text_embedding_client,
+        bm25_encoder=request.app.state.bm25_encoder,
         vector_store=request.app.state.vector_store,
         reranker_client=request.app.state.reranker_client,
         settings=request.app.state.settings,

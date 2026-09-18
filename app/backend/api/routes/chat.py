@@ -20,7 +20,7 @@ async def query_chat(request: ChatQueryRequest, servicer: Retriever = Depends(ge
         chunk_id=result.candidate.payload.get("chunk_id"),
         text=result.candidate.payload.get("text"),
         page_numbers=result.candidate.payload.get("page_numbers") or [],
-        dense_score=result.candidate.dense_score,
+        hybrid_score=result.candidate.hybrid_score,
         rerank_score=result.rerank_score,
     ) for result in results
     ]

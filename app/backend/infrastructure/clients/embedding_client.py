@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 from typing import Any
 
 import httpx
@@ -13,16 +14,39 @@ from app.backend.config import Settings
 logger = logging.getLogger(__name__)
 
 RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
-RETRYABLE_EXCEPTIONS = (
-    httpx.ConnectError,
-    httpx.ConnectTimeout,
-    httpx.ReadTimeout,
-    httpx.RemoteProtocolError,
-)
+RETRYABLE_EXCEPTIONS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.NetworkError)
 
 
 class EmbeddingClientError(RuntimeError):
     """Raised when the local embedding service request or response is invalid."""
+
+@dataclass(frozen=True)
+class SparseEmbedding:
+    indices: list[int]
+    values: list[float]
+
+class BM25Encoder:
+    def __init__(self):
+        from fastembed import SparseTextEmbedding
+
+        self.encoder = SparseTextEmbedding(
+            model_name="Qdrant/bm25",
+            language="english",
+            avg_len=256.0,
+        )
+
+    @staticmethod
+    def convert(value) -> SparseEmbedding:
+        return SparseEmbedding(
+            indices=value.indices.tolist(),
+            values=value.values.tolist(),
+        )
+
+    def encode_documents(self, texts: list[str]) -> list[SparseEmbedding]:
+        return [self.convert(value) for value in self.encoder.embed(texts)]
+
+    def encode_query(self, text: str) -> SparseEmbedding:
+        return self.convert(next(self.encoder.query_embed(text)))
 
 
 class EmbeddingClient:

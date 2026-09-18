@@ -599,6 +599,11 @@ class Settings(BaseSettings):
         title="Figure collection",
         description="Qdrant collection used for visual vectors.",
     )
+    qdrant_hybrid_collection: str = Field(
+        default="paper_hybrid__bm25__1024__v1",
+        title="Hybrid collection",
+        description="Qdrant collection used for hybrid retrieval.",
+    )
     qdrant_distance: Literal["cosine", "dot", "euclid", "manhattan"] = Field(
         default="cosine",
         title="Qdrant distance metric",

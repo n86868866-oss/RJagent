@@ -4,11 +4,12 @@ from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
-from qdrant_client.models import PointStruct, FieldCondition, Filter, MatchValue
+from qdrant_client import models, AsyncQdrantClient
+from qdrant_client.models import PointStruct, FieldCondition, Filter, MatchValue, Distance
 
 from app.backend.config import Settings
 from app.backend.services.papers.models import PaperChunk
-
+from app.backend.infrastructure.clients.embedding_client import SparseEmbedding
 
 class VectorStore:
     """Qdrant connection and collection compatibility checks."""
@@ -19,13 +20,6 @@ class VectorStore:
 
     @classmethod
     async def connect(cls, settings: Settings) -> "VectorStore":
-        try:
-            from qdrant_client import AsyncQdrantClient
-        except ImportError as error:  # pragma: no cover - environment failure
-            raise RuntimeError(
-                "qdrant-client is required. Install the packages from requirements.txt."
-            ) from error
-
         if settings.qdrant_mode == "local":
             path: Path = settings.project_path(settings.qdrant_path)
             path.mkdir(parents=True, exist_ok=True)
@@ -49,20 +43,26 @@ class VectorStore:
         return store
 
     async def ensure_collections(self) -> None:
-        await self.ensure_collection(name=self.settings.qdrant_text_collection, dimension=self.settings.text_embedding_dimension)
+        await self.ensure_hybrid_collection(
+            name=self.settings.qdrant_hybrid_collection,
+            dimension=self.settings.text_embedding_dimension,
+        )
         if self.settings.visual_embedding_enabled:
-            await self.ensure_collection(name=self.settings.qdrant_figure_collection, dimension=self.settings.visual_embedding_dimension)
+            await self.ensure_dense_collection(
+                name=self.settings.qdrant_figure_collection,
+                dimension=self.settings.visual_embedding_dimension,
+            )
 
-    async def ensure_collection(self, *, name: str, dimension: int) -> None:
-        from qdrant_client.models import Distance, VectorParams
-
-        distance_map = {
+    def distance(self) -> Distance:
+        return {
             "cosine": Distance.COSINE,
             "dot": Distance.DOT,
             "euclid": Distance.EUCLID,
             "manhattan": Distance.MANHATTAN,
-        }
-        distance = distance_map[self.settings.qdrant_distance]
+        }[self.settings.qdrant_distance]
+
+    async def ensure_hybrid_collection(self, *, name: str, dimension: int) -> None:
+        distance = self.distance()
 
         exists = await self.client.collection_exists(name)
         if self.settings.qdrant_recreate_collections and exists:
@@ -70,22 +70,52 @@ class VectorStore:
             exists = False
 
         if not exists:
-            await self.client.create_collection(collection_name=name, vectors_config=VectorParams(size=dimension, distance=distance))
+            await self.client.create_collection(
+                collection_name=name,
+                vectors_config={"dense": models.VectorParams(size=dimension, distance=distance)},
+                sparse_vectors_config={"sparse": models.SparseVectorParams(modifier=models.Modifier.IDF)},
+            )
+            await self.client.create_payload_index(
+                collection_name=name,
+                field_name="paper_id",
+                field_schema=models.PayloadSchemaType.KEYWORD,
+                wait=True,
+            )
             return
 
-        actual_dimension = await self.read_collection_dimension(name)
-        if actual_dimension != dimension:
-            raise RuntimeError(
-                f"Qdrant collection '{name}' has dimension {actual_dimension}; "
-                f"configuration expects {dimension}."
+        await self.assert_hybrid_schema(name, dimension)
+        await self.client.create_payload_index(
+            collection_name=name, field_name="paper_id",
+            field_schema=models.PayloadSchemaType.KEYWORD,
+            wait=True,
+        )
+
+    async def ensure_dense_collection(self, *, name: str, dimension: int) -> None:
+        exists = await self.client.collection_exists(name)
+        if self.settings.qdrant_recreate_collections and exists:
+            await self.client.delete_collection(name)
+            exists = False
+
+        if not exists:
+            await self.client.create_collection(
+                collection_name=name,
+                vectors_config=models.VectorParams(
+                    size=dimension,
+                    distance=self.distance(),
+                ),
             )
+            return
 
-    async def upsert_vectors(self, *, paper_chunks: list[PaperChunk], vectors: list[list[float]]) -> None:
+        await self.assert_dense_schema(name, dimension)
+    async def upsert_vectors(self, *, paper_chunks: list[PaperChunk], dense_vectors: list[list[float]], sparse_vectors: list[SparseEmbedding]) -> None:
         """Upsert vectors into the Qdrant collection."""
-        if len(paper_chunks) != len(vectors):
-            raise RuntimeError(f"Chunk/vector count mismatch: chunks={len(paper_chunks)}, vectors={len(vectors)}.")
+        if not (len(paper_chunks) == len(dense_vectors) == len(sparse_vectors)):
+            raise RuntimeError(f"Chunk/vector count mismatch: chunks={len(paper_chunks)}, dense={len(dense_vectors)}, sparse={len(sparse_vectors)}.")
 
-        for index, vector in enumerate(vectors):
+        if not paper_chunks:
+            return
+
+        for index, vector in enumerate(dense_vectors):
             if len(vector) != self.settings.text_embedding_dimension:
                 raise RuntimeError(
                     f"Vector dimension mismatch at index {index}: "
@@ -95,7 +125,13 @@ class VectorStore:
         points = [
             PointStruct(
                 id=str(uuid5(NAMESPACE_URL, chunk.chunk_id)),
-                vector=vector,
+                vector={
+                    "dense": dense_vector,
+                    "sparse": models.SparseVector(
+                        indices=sparse_vector.indices,
+                        values=sparse_vector.values,
+                    ),
+                },
                 payload={
                     "paper_id": chunk.paper_id,
                     "chunk_id": chunk.chunk_id,
@@ -113,10 +149,10 @@ class VectorStore:
                     "image_path": chunk.metadata.get("image_path"),
                 },
             )
-            for chunk, vector in zip(paper_chunks, vectors, strict=True)
+            for chunk, dense_vector, sparse_vector in zip(paper_chunks, dense_vectors, sparse_vectors, strict=True)
         ]
         await self.client.upsert(
-            collection_name=self.settings.qdrant_text_collection,
+            collection_name=self.settings.qdrant_hybrid_collection,
             points=points,
             wait=True,
         )
@@ -124,22 +160,39 @@ class VectorStore:
     async def delete_vectors(self, *, paper_id: str) -> None:
         """Delete all vectors for a given paper_id from the Qdrant collection."""
         await self.client.delete(
-            collection_name=self.settings.qdrant_text_collection,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="paper_id",
-                        match=MatchValue(value=paper_id),
-                    )
-                ]
-            ),
+            collection_name=self.settings.qdrant_hybrid_collection,
+            points_selector=Filter(must=[FieldCondition(key="paper_id", match=MatchValue(value=paper_id))]),
             wait=True,
         )
 
     async def query_text_chunks(self, *, query_vector: list[float], limit: int):
         result = await self.client.query_points(
-            collection_name=self.settings.qdrant_text_collection,
+            collection_name=self.settings.qdrant_hybrid_collection,
             query=query_vector,
+            using="dense",
+            limit=limit,
+            with_payload=True,
+            with_vectors=False,
+        )
+        return result.points
+
+    async def hybrid_search(
+        self, *, dense_query: list[float], sparse_query: SparseEmbedding,
+        limit: int = 20, prefetch_k: int = 30,
+    ):
+        if limit < 1 or prefetch_k < 1:
+            raise ValueError("Retrieval limits must be positive.")
+        if len(dense_query) != self.settings.text_embedding_dimension:
+            raise ValueError("Query vector dimension mismatch.")
+        prefetch_depth = max(limit, prefetch_k)
+        routes = [models.Prefetch(query=dense_query, using="dense", limit=prefetch_depth)]
+        if sparse_query.indices:
+            routes.append(models.Prefetch(query=models.SparseVector(indices=sparse_query.indices, values=sparse_query.values), using="sparse", limit=prefetch_depth))
+
+        result = await self.client.query_points(
+            collection_name=self.settings.qdrant_hybrid_collection,
+            prefetch=routes,
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=limit,
             with_payload=True,
             with_vectors=False,
@@ -147,34 +200,48 @@ class VectorStore:
         return result.points
 
     async def ping(self) -> None:
-        """Query Qdrant and validate every enabled collection dimension."""
-
         await self.client.get_collections()
-        await self.assert_collection_dimension(name=self.settings.qdrant_text_collection, expected=self.settings.text_embedding_dimension)
+        await self.assert_hybrid_schema(
+            self.settings.qdrant_hybrid_collection,
+            self.settings.text_embedding_dimension,
+        )
         if self.settings.visual_embedding_enabled:
-            await self.assert_collection_dimension(name=self.settings.qdrant_figure_collection, expected=self.settings.visual_embedding_dimension)
-
-    async def assert_collection_dimension(self, *, name: str, expected: int) -> None:
-        actual = await self.read_collection_dimension(name)
-        if actual != expected:
-            raise RuntimeError(
-                f"Qdrant collection '{name}' dimension changed "
-                f"from {expected} to {actual}."
+            await self.assert_dense_schema(
+                self.settings.qdrant_figure_collection,
+                self.settings.visual_embedding_dimension,
             )
 
-    async def read_collection_dimension(self, name: str) -> int | None:
+    async def assert_hybrid_schema(self, name: str, dimension: int) -> None:
         info = await self.client.get_collection(name)
-        vectors_config = info.config.params.vectors
-        if isinstance(vectors_config, dict):
-            if len(vectors_config) != 1:
-                raise RuntimeError(
-                    f"Qdrant collection '{name}' uses named or multiple vectors; "
-                    "the MVP expects one unnamed vector."
-                )
-            vector_params = next(iter(vectors_config.values()))
-        else:
-            vector_params = vectors_config
-        return getattr(vector_params, "size", None)
+        params = info.config.params
+        dense = params.vectors
+        sparse = params.sparse_vectors or {}
+        valid = (
+            isinstance(dense, dict)
+            and "dense" in dense
+            and dense["dense"].size == dimension
+            and dense["dense"].distance == self.distance()
+            and "sparse" in sparse
+            and sparse["sparse"].modifier == models.Modifier.IDF
+        )
+        if not valid:
+            raise RuntimeError(
+                f"Hybrid collection '{name}' requires named dense ({dimension} dimensions, "
+                f"{self.settings.qdrant_distance}) and sparse with IDF. "
+                "Use a new compatible collection and backfill; existing data was not changed."
+            )
 
+    async def assert_dense_schema(self, name: str, dimension: int) -> None:
+        info = await self.client.get_collection(name)
+        vectors = info.config.params.vectors
+        if (
+            isinstance(vectors, dict)
+            or vectors.size != dimension
+            or vectors.distance != self.distance()
+        ):
+            raise RuntimeError(
+                f"Dense collection '{name}' requires one unnamed vector "
+                f"({dimension} dimensions, {self.settings.qdrant_distance})."
+            )
     async def close(self) -> None:
         await self.client.close()

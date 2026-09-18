@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sqlite3
 from pathlib import Path
@@ -19,8 +20,9 @@ from app.backend.core.exceptions import (
     TextEmbeddingError,
     QdrantUnavailableError,
 )
+
 from app.backend.infrastructure.clients.mineru_client import MinerUProtocolError, MinerUServiceError, MinerUClient
-from app.backend.infrastructure.clients.embedding_client import EmbeddingClient
+from app.backend.infrastructure.clients.embedding_client import BM25Encoder, EmbeddingClient
 from app.backend.infrastructure.stores.file_store import FileStore
 from app.backend.infrastructure.stores.metadata_store import MetadataStore
 from app.backend.infrastructure.stores.vector_store import VectorStore
@@ -43,12 +45,13 @@ PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf", "application/octet-
 
 
 class PaperService:
-    def __init__(self, *, settings: Settings, metadata_store: MetadataStore, file_store: FileStore, mineru_client: MinerUClient, text_embedding_client: EmbeddingClient, vector_store: VectorStore) -> None:
+    def __init__(self, *, settings: Settings, metadata_store: MetadataStore, file_store: FileStore, mineru_client: MinerUClient, text_embedding_client: EmbeddingClient, vector_store: VectorStore, bm25_encoder: BM25Encoder) -> None:
         self.settings = settings
         self.metadata_store = metadata_store
         self.file_store = file_store
         self.mineru_client = mineru_client
         self.text_embedding_client = text_embedding_client
+        self.bm25_encoder = bm25_encoder
         self.vector_store = vector_store
         self.chunker = Chunker(chunk_size=settings.chunk_size_chars, chunk_overlap=settings.chunk_overlap_chars)
         self.document_builder = MinerUDocumentBuilder()
@@ -104,16 +107,25 @@ class PaperService:
             logger.info("论文切分完成 论文名%s 文本块数%s 切分块数%s", paper_name, len(text_blocks), len(paper_chunks))
 
             try:
-                texts = [self.build_embedding_text(chunk) for chunk in paper_chunks]
-                vectors = await self.text_embedding_client.embed_documents(texts)
+                dense_texts: list[str] = []
+                sparse_texts: list[str] = []
+                for chunk in paper_chunks:
+                    dense_texts.append(self.build_embedding_text(chunk))
+                    sparse_texts.append(chunk.text)
+                dense_vectors = await self.text_embedding_client.embed_documents(dense_texts)
+                sparse_vectors = await asyncio.to_thread(
+                    self.bm25_encoder.encode_documents,
+                    sparse_texts,
+                )
             except Exception as error:
                 raise TextEmbeddingError(context={"stage": "embedding", "reason": "embedding_failed"}) from error
 
-            logger.info("文本向量生成完成 论文名%s 向量数量%s 向量维度%s", paper_name, len(vectors), len(vectors[0]) if vectors else 0)
+            logger.info("文本向量生成完成 论文名%s 向量数量%s 向量维度%s", paper_name, len(dense_vectors), len(dense_vectors[0]) if dense_vectors else 0)
+            logger.info("稀疏向量生成完成 论文名%s 向量数量%s", paper_name, len(sparse_vectors))
 
             try:
-                await self.vector_store.upsert_vectors(paper_chunks=paper_chunks, vectors=vectors)
                 vectors_may_exist = True
+                await self.vector_store.upsert_vectors(paper_chunks=paper_chunks, dense_vectors=dense_vectors, sparse_vectors=sparse_vectors)
             except Exception as error:
                 raise QdrantUnavailableError(context={"stage": "vector_store", "reason": "upsert_text_chunks_failed"}) from error
 

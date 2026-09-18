@@ -12,7 +12,7 @@ class Candidate(BaseModel):
     chunk_id: str
     text: str
     page_numbers: list[int] = Field(default_factory=list)
-    dense_score: float
+    hybrid_score: float
     rerank_score: float
 
 class ChatQueryResponse(BaseModel):
