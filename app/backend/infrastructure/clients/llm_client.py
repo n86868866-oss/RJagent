@@ -9,32 +9,29 @@ from openai.types.chat import ChatCompletionMessage
 import logging
 
 from app.backend.config import Settings
+from app.backend.core.exceptions import ServiceUnavailableError
 
 logger = logging.getLogger(__name__)
-
-
-class LLMProtocolError(RuntimeError):
-    """Raised when an OpenAI-compatible LLM response is unusable."""
 
 
 class LLMClient:
     """Shared OpenAI-compatible client for chat generation."""
 
     def __init__(self, settings: Settings) -> None:
-        if not settings.llm_base_url or not settings.llm_model or not settings.llm_api_key:
-            raise ValueError("LLMClient requires llm_base_url, llm_model, and llm_api_key to be set in settings.")
         self.model = settings.llm_model
         self.client = AsyncOpenAI(
                     api_key=settings.llm_api_key.get_secret_value(),
                     base_url=settings.llm_base_url,
                     timeout=settings.llm_timeout_seconds,
                     max_retries=settings.llm_max_retries,
-                )
+                ) if settings.llm_base_url and settings.llm_model and settings.llm_api_key else None
         self.timeout_seconds = settings.llm_timeout_seconds
         self.max_retries = settings.llm_max_retries
         self.temperature = settings.llm_temperature
 
     async def complete(self, *, messages: Sequence[dict[str, Any]], max_tokens: int = 1024, tools: list[dict[str, Any]] | None = None, tool_choice: str = "auto") -> ChatCompletionMessage:
+        if self.client is None:
+            raise ServiceUnavailableError("大语言模型服务尚未配置。")
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=messages,
@@ -48,7 +45,7 @@ class LLMClient:
         )
 
         if not response.choices:
-            raise LLMProtocolError("LLM completion returned no choices.")
+            raise ValueError("大语言模型未返回候选回答。")
 
         logger.info(
             "大语言模型补全成功 模型:%s 提示token数:%s 补全token数:%s 总token数:%s",
@@ -65,6 +62,8 @@ class LLMClient:
     async def probe(self) -> None:
         """Make one minimal real chat-completion request."""
 
+        if self.client is None:
+            raise ServiceUnavailableError("大语言模型服务尚未配置。")
         response = await self.client.chat.completions.create(
             model=self.model,
             messages=[
@@ -78,7 +77,7 @@ class LLMClient:
         )
 
         if not response.choices:
-            raise LLMProtocolError("LLM health probe returned no choices.")
+            raise ValueError("大语言模型健康检查未返回候选回答。")
 
         usage = response.usage
         
@@ -91,4 +90,5 @@ class LLMClient:
             )
 
     async def close(self) -> None:
-        await self.client.close()
+        if self.client is not None:
+            await self.client.close()

@@ -43,10 +43,15 @@ class RerankerClient:
             except httpx.HTTPError as e:
                 if attempt < self.max_retries:
                     continue
-                raise RuntimeError(f"Reranker request failed after {self.max_retries} retries: {e}") from e
+                raise
             break
 
-        results = [RerankScore(index=int(item["index"]), score=float(item["score"])) for item in response.json()]
+        try:
+            results = [RerankScore(index=int(item["index"]), score=float(item["score"])) for item in response.json()]
+            if any(item.index < 0 or item.index >= len(texts) for item in results):
+                raise ValueError("重排结果的索引超出输入文本范围。")
+        except (ValueError, KeyError, TypeError) as error:
+            raise ValueError("重排服务返回的分数格式不正确。") from error
         return sorted(results, key=lambda item: item.score, reverse=True)[:self.top_k]
 
     async def probe(self) -> None:
@@ -55,7 +60,7 @@ class RerankerClient:
             texts=["健康检查文本", "完全无关的内容"],
         )
         if not results:
-            raise RuntimeError("Reranker returned no results.")
+            raise ValueError("重排服务未返回结果。")
 
     async def close(self) -> None:
         await self.http_client.aclose()

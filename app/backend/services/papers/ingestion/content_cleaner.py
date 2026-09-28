@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from html import unescape
 from io import StringIO
 import re
@@ -51,13 +52,13 @@ class ContentCleaner:
     def table_to_markdown(self, item: dict) -> str:
         table_body = item.get("table_body")
         if not isinstance(table_body, str) or not table_body.strip():
-            raise ValueError("table_body_missing")
+            raise ValueError("表格正文缺失")
 
         header_rows = self.table_header_rows(table_body)
         header = list(range(header_rows)) if header_rows > 1 else 0
         frames = pd.read_html(StringIO(table_body), header=header, flavor="lxml")
         if not frames:
-            raise ValueError("table_parse_failed")
+            raise ValueError("表格解析失败")
 
         frame = frames[0].fillna("")
         frame.columns = self.flatten_table_columns(frame.columns)

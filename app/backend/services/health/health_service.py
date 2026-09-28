@@ -2,53 +2,31 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime, timezone
 from time import perf_counter
-from typing import Any, Literal
-
-from fastapi import FastAPI
+from typing import Any
 
 from app.backend.config import Settings
-from app.backend.infrastructure.clients.pymupdf_client import PyMuPDFClient
 
 
-ComponentStatus = Literal["ok", "error", "disabled"]
-HealthStatus = Literal["ready", "not_ready"]
+from app.backend.services.health.models import ComponentCheckResult, HealthCheckResult
 
-PROBE_TIMEOUT_SECONDS = 15.0
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True, slots=True)
-class ComponentCheckResult:
-    status: ComponentStatus
-    required: bool
-    probe: str
-    latency_ms: float
-    error_type: str | None = None
-    error_message: str | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class HealthCheckResult:
-    status: HealthStatus
-    checked_at: datetime
-    components: dict[str, ComponentCheckResult]
 
 
 class HealthService:
     """Execute one real, bounded probe for every enabled dependency."""
 
-    def __init__(self, app: FastAPI, settings: Settings) -> None:
-        self.app = app
+    def __init__(self, *, resources: Mapping[str, Any], ready: bool, settings: Settings) -> None:
+        self.resources = resources
+        self.ready = ready
         self.settings = settings
 
-    async def check(self) -> HealthCheckResult:
-        """Run a fresh full check and return the complete internal result."""
+    async def check(self, *, include_optional: bool = True) -> HealthCheckResult:
+        """Probe required dependencies, optionally including diagnostic-only components."""
 
-        application_ready = bool(getattr(self.app.state, "ready", False))
+        application_ready = self.ready
         components: dict[str, ComponentCheckResult] = {
             "application": ComponentCheckResult(
                 status="ok" if application_ready else "error",
@@ -59,83 +37,35 @@ class HealthService:
             )
         }
 
-        names = ("filesystem", "sqlite", "qdrant", "text_embedding", "reranker", "mineru", "llm", "pymupdf")
-        checks = (
-            self.probe_state_resource(
-                component="filesystem",
-                state_name="file_store",
-                probe_name="check_writable",
-                probe="create_write_read_delete_temp_file",
-                required=True,
-            ),
-            self.probe_state_resource(
-                component="sqlite",
-                state_name="metadata_store",
-                probe_name="ping",
-                probe="select_1",
-                required=True,
-            ),
-            self.probe_state_resource(
-                component="qdrant",
-                state_name="vector_store",
-                probe_name="ping",
-                probe="qdrant_collections_and_dimensions",
-                required=True,
-            ),
-            self.probe_state_resource(
-                component="text_embedding",
-                state_name="text_embedding_client",
-                probe_name="probe",
-                probe="real_embedding_request",
-                required=True,
-            ),
-            self.probe_state_resource(
-                component="reranker",
-                state_name="reranker_client",
-                probe_name="probe",
-                probe="real_reranker_request",
-                required=True,
-            ),
-            self.probe_state_resource(
-                component="mineru",
-                state_name="mineru_client",
-                probe_name="probe",
-                probe="mineru_health_request",
-                required=True,
-            ),
-            self.probe_state_resource(
-                component="llm",
-                state_name="llm_client",
-                probe_name="probe",
-                probe="minimal_chat_completion",
-                required=True,
-            ),
-            self.run_probe(
-                component="pymupdf",
-                operation=PyMuPDFClient.probe,
-                probe="create_serialize_reopen_pdf",
-                required=True,
-            ),
-        )
-
-        results = await asyncio.gather(*checks)
-        components.update(dict(zip(names, results, strict=True)))
-
+        probes = {
+            "filesystem": ("file_store", "check_writable", "create_write_read_delete_temp_file"),
+            "sqlite": ("metadata_store", "ping", "select_1"),
+            "qdrant": ("vector_store", "ping", "qdrant_collections_and_dimensions"),
+            "text_embedding": ("text_embedding_client", "probe", "real_embedding_request"),
+            "reranker": ("reranker_client", "probe", "real_reranker_request"),
+            "mineru": ("mineru_client", "probe", "mineru_health_request"),
+            "llm": ("llm_client", "probe", "minimal_chat_completion"),
+        }
         if self.settings.visual_embedding_enabled:
-            components["visual_embedding"] = await self.probe_state_resource(
-                component="visual_embedding",
-                state_name="visual_embedding_client",
-                probe_name="probe",
-                probe="visual_embedding_health_request",
-                required=True,
-            )
+            probes["visual_embedding"] = ("visual_embedding_client", "probe", "visual_embedding_health_request")
         else:
             components["visual_embedding"] = ComponentCheckResult(
                 status="disabled",
-                required=False,
+                required="visual_embedding" in self.settings.health_required_components,
                 probe="disabled_by_configuration",
                 latency_ms=0.0,
             )
+
+        checks = {
+            name: self.probe_state_resource(
+                component=name, state_name=resource, probe_name=method, probe=description,
+                required=name in self.settings.health_required_components,
+                include_optional=include_optional,
+            )
+            for name, (resource, method, description) in probes.items()
+        }
+        results = await asyncio.gather(*checks.values())
+        components.update(zip(checks, results, strict=True))
 
         required_components_ok = all(component.status == "ok" for component in components.values() if component.required)
 
@@ -145,10 +75,12 @@ class HealthService:
             components=components,
         )
 
-    async def probe_state_resource(self, *, component: str, state_name: str, probe_name: str, probe: str, required: bool) -> ComponentCheckResult:
+    async def probe_state_resource(self, *, component: str, state_name: str, probe_name: str, probe: str, required: bool, include_optional: bool = True) -> ComponentCheckResult:
         """Resolve one lifespan resource and execute its real probe method."""
 
-        resource = getattr(self.app.state, state_name, None)
+        if not required and not include_optional:
+            return ComponentCheckResult(status="unchecked", required=False, probe="not_probed_for_readiness", latency_ms=0.0)
+        resource = self.resources.get(state_name)
         if resource is None:
             return ComponentCheckResult(
                 status="error",
@@ -156,7 +88,7 @@ class HealthService:
                 probe=probe,
                 latency_ms=0.0,
                 error_type="ResourceNotInitialized",
-                error_message=f"{state_name} is not initialized.",
+                error_message=f"服务资源尚未初始化：{state_name}",
             )
 
         operation = getattr(resource, probe_name, None)
@@ -167,17 +99,19 @@ class HealthService:
                 probe=probe,
                 latency_ms=0.0,
                 error_type=f"ProbeMethodMissing:{state_name}.{probe_name}",
-                error_message=f"{state_name}.{probe_name} is not callable.",
+                error_message=f"健康检查方法不可调用：{state_name}.{probe_name}",
             )
 
-        return await self.run_probe(component=component, operation=operation, probe=probe, required=required)
+        return await self.run_probe(component=component, operation=operation, probe=probe, required=required, include_optional=include_optional)
 
-    async def run_probe(self, *, component: str, operation: Callable[[], Awaitable[None]], probe: str, required: bool) -> ComponentCheckResult:
+    async def run_probe(self, *, component: str, operation: Callable[[], Awaitable[None]], probe: str, required: bool, include_optional: bool = True) -> ComponentCheckResult:
         """Execute one probe with a hard timeout and normalize its result."""
 
+        if not required and not include_optional:
+            return ComponentCheckResult(status="unchecked", required=False, probe="not_probed_for_readiness", latency_ms=0.0)
         started_at = perf_counter()
         try:
-            await asyncio.wait_for(operation(), timeout=PROBE_TIMEOUT_SECONDS)
+            await asyncio.wait_for(operation(), timeout=self.settings.health_probe_timeout_seconds)
         except TimeoutError:
             return ComponentCheckResult(
                 status="error",
@@ -185,12 +119,12 @@ class HealthService:
                 probe=probe,
                 latency_ms=self.elapsed_ms(started_at),
                 error_type="ProbeTimeout",
-                error_message=f"Probe exceeded {PROBE_TIMEOUT_SECONDS} seconds.",
+                error_message=f"健康检查超时，已超过 {self.settings.health_probe_timeout_seconds} 秒。",
             )
         except Exception as error:
             root_error = root_cause(error)
             logger.warning(
-                "组件%s 健康检查失败 探针%s 目标%s 错误%s:%s 根因%s:%s",
+                "组件%s 健康检查失败 探针%s 目标%s 错误%s:%s 根因%s:%s 上下文:%s",
                 component,
                 probe,
                 probe_target(operation),
@@ -198,6 +132,7 @@ class HealthService:
                 str(error),
                 type(root_error).__name__,
                 str(root_error),
+                getattr(error, "context", {}),
                 exc_info=True,
             )
             return ComponentCheckResult(
@@ -206,7 +141,7 @@ class HealthService:
                 probe=probe,
                 latency_ms=self.elapsed_ms(started_at),
                 error_type=type(error).__name__,
-                error_message=str(error),
+                error_message="组件检查失败，请查看服务日志",
             )
 
         return ComponentCheckResult(

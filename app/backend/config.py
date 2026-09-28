@@ -89,6 +89,11 @@ class Settings(BaseSettings):
         title="Enable API documentation",
         description="Whether to enable the API documentation.",
     )
+    health_required_components: set[Literal["filesystem", "sqlite", "qdrant", "text_embedding", "reranker", "mineru", "llm", "visual_embedding"]] = Field(
+        default_factory=lambda: {"filesystem", "sqlite", "qdrant", "text_embedding", "reranker"},
+        description="Components that must pass readiness. External services are optional by default.",
+    )
+    health_probe_timeout_seconds: float = Field(default=5.0, gt=0)
     health_details_enabled: bool = Field(
         default=True,   
         title="Enable health details",
@@ -647,12 +652,12 @@ class Settings(BaseSettings):
 
         if self.chunk_overlap_chars >= self.chunk_size_chars:
             raise ValueError(
-                "CHUNK_OVERLAP_CHARS must be smaller than CHUNK_SIZE_CHARS."
+                "CHUNK_OVERLAP_CHARS 必须小于 CHUNK_SIZE_CHARS。"
             )
 
         if self.retrieval_final_top_k > self.retrieval_candidate_top_k:
             raise ValueError(
-                "RETRIEVAL_FINAL_TOP_K cannot exceed RETRIEVAL_CANDIDATE_TOP_K."
+                "RETRIEVAL_FINAL_TOP_K 不能超过 RETRIEVAL_CANDIDATE_TOP_K。"
             )
 
         embedding_batch_limits = {
@@ -662,45 +667,45 @@ class Settings(BaseSettings):
         model_batch_limit = embedding_batch_limits.get(self.text_embedding_model)
         if model_batch_limit and self.text_embedding_batch_size > model_batch_limit:
             raise ValueError(
-                f"{self.text_embedding_model} supports at most "
-                f"{model_batch_limit} texts per synchronous request."
+                f"{self.text_embedding_model} 每次同步请求最多支持 "
+                f"{model_batch_limit} 段文本。"
             )
 
         if self.text_embedding_provider != "local_tei" and (
             not self.text_embedding_api_key or not self.text_embedding_api_key.get_secret_value().strip()
         ):
-            raise ValueError("TEXT_EMBEDDING_API_KEY cannot be empty.")
+            raise ValueError("TEXT_EMBEDDING_API_KEY 不能为空。")
 
         embedding_base_url = self.text_embedding_base_url.rstrip("/")
         if self.text_embedding_provider == "local_tei" and not embedding_base_url:
-            raise ValueError("local_tei requires a non-empty TEXT_EMBEDDING_BASE_URL.")
+            raise ValueError("使用 local_tei 时，TEXT_EMBEDDING_BASE_URL 不能为空。")
         if (
             self.text_embedding_provider == "dashscope_native"
             and not embedding_base_url.endswith("/api/v1")
         ):
             raise ValueError(
-                "dashscope_native requires a TEXT_EMBEDDING_BASE_URL ending in /api/v1."
+                "使用 dashscope_native 时，TEXT_EMBEDDING_BASE_URL 必须以 /api/v1 结尾。"
             )
         if (
             self.text_embedding_provider == "dashscope_openai_compatible"
             and not embedding_base_url.endswith("/compatible-mode/v1")
         ):
             raise ValueError(
-                "dashscope_openai_compatible requires a TEXT_EMBEDDING_BASE_URL "
-                "ending in /compatible-mode/v1."
+                "使用 dashscope_openai_compatible 时，TEXT_EMBEDDING_BASE_URL "
+                "必须以 /compatible-mode/v1 结尾。"
             )
 
         if self.qdrant_mode == "server" and not self.qdrant_url:
-            raise ValueError("QDRANT_URL is required when QDRANT_MODE=server.")
+            raise ValueError("QDRANT_MODE=server 时必须设置 QDRANT_URL。")
 
         if self.mineru_mode == "cloud_api":
             if not self.mineru_api_base:
                 raise ValueError(
-                    "MINERU_API_BASE is required when MINERU_MODE=cloud_api."
+                    "MINERU_MODE=cloud_api 时必须设置 MINERU_API_BASE。"
                 )
             if not self.mineru_api_token or not self.mineru_api_token.get_secret_value().strip():
                 raise ValueError(
-                    "MINERU_API_TOKEN is required when MINERU_MODE=cloud_api."
+                    "MINERU_MODE=cloud_api 时必须设置 MINERU_API_TOKEN。"
                 )
 
         return self

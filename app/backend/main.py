@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from contextlib import AsyncExitStack, asynccontextmanager, AbstractAsyncContextManager
 from typing import AsyncIterator
@@ -54,14 +53,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             text_embedding_client = EmbeddingClient(settings)
             stack.push_async_callback(text_embedding_client.close)
 
-            bm25_encoder = await asyncio.to_thread(BM25Encoder)
+            bm25_encoder = BM25Encoder()
 
             reranker_client = RerankerClient(settings=settings)
             stack.push_async_callback(reranker_client.close)
 
             llm_client = LLMClient(settings)
-            if llm_client is not None:
-                stack.push_async_callback(llm_client.close)
+            stack.push_async_callback(llm_client.close)
 
             mineru_client = MinerUClient.from_settings(settings)
             stack.push_async_callback(mineru_client.close)

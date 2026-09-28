@@ -10,6 +10,7 @@ from uuid import uuid4
 from app.backend.config import Settings
 
 
+
 class FileStore:
     """Own application data directories and verify real read/write access."""
 
@@ -40,7 +41,7 @@ class FileStore:
     @staticmethod
     def probe_directory(name: str, path: Path) -> None:
         if not path.is_dir():
-            raise RuntimeError(f"Data directory '{name}' does not exist: {path}")
+            raise FileNotFoundError(f"数据目录不存在：{name}（{path}）")
 
         probe_path = path / f".health-{uuid4().hex}.tmp"
         payload = b"research-journey-agent-health"
@@ -52,7 +53,7 @@ class FileStore:
                 os.fsync(file.fileno())
 
             if probe_path.read_bytes() != payload:
-                raise RuntimeError(f"Data directory '{name}' failed its read-after-write probe.")
+                raise OSError(f"数据目录读写校验失败：{name}")
         finally:
             probe_path.unlink(missing_ok=True)
 
@@ -137,9 +138,9 @@ class FileStore:
         try:
             resolved_path.relative_to(resolved_base)
         except ValueError as error:
-            raise RuntimeError(f"Refusing to remove path outside data directory: {resolved_path}") from error
+            raise ValueError(f"拒绝删除数据目录以外的路径：{resolved_path}") from error
         if resolved_path == resolved_base:
-            raise RuntimeError(f"Refusing to remove data directory root: {resolved_path}")
+            raise ValueError(f"拒绝删除数据根目录：{resolved_path}")
         if resolved_path.exists():
             shutil.rmtree(resolved_path)
 

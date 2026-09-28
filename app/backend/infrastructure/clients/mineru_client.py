@@ -13,19 +13,6 @@ import httpx
 from app.backend.config import Settings
 
 
-class MinerUProtocolError(RuntimeError):
-    """Raised when the MinerU health response is invalid."""
-
-
-class MinerUServiceError(RuntimeError):
-    """Raised when the MinerU service cannot complete a parsing request."""
-
-    def __init__(self, message: str, *, status_code: int | None = None, response_body: str | None = None) -> None:
-        super().__init__(message)
-        self.status_code = status_code
-        self.response_body = response_body
-
-
 @dataclass(frozen=True, slots=True)
 class MinerUParseResult:
     files: dict[str, bytes]
@@ -78,10 +65,10 @@ class MinerUClient:
         try:
             payload = response.json()
         except ValueError as error:
-            raise MinerUProtocolError("MinerU health endpoint returned non-JSON content.") from error
+            raise ValueError("MinerU 健康检查返回的内容不是有效的 JSON。") from error
 
         if not isinstance(payload, dict):
-            raise MinerUProtocolError("MinerU health endpoint returned an invalid JSON object.")
+            raise ValueError("MinerU 健康检查返回的 JSON 对象格式不正确。")
 
     async def parse_pdf(self, file_path: Path, *, start_page_id: int | None = None, end_page_id: int | None = None, return_images: bool = False) -> MinerUParseResult:
         """Parse one PDF through MinerU's HTTP API."""
@@ -104,17 +91,8 @@ class MinerUClient:
         payload = await asyncio.to_thread(file_path.read_bytes)
         files = {"files": (file_path.name, payload, "application/pdf"),}
 
-        try:
-            response = await self.http_client.post("file_parse", data=data, files=files)
-            response.raise_for_status()
-        except httpx.TimeoutException as error:
-            raise MinerUServiceError("MinerU解析请求超时") from error
-        except httpx.HTTPStatusError as error:
-            status_code = error.response.status_code
-            response_body = self.summarize_error_body(error.response)
-            raise MinerUServiceError(f"MinerU解析请求返回HTTP {status_code}", status_code=status_code, response_body=response_body) from error
-        except httpx.HTTPError as error:
-            raise MinerUServiceError("MinerU解析请求失败") from error
+        response = await self.http_client.post("file_parse", data=data, files=files)
+        response.raise_for_status()
 
         return self.parse_response(response)
 
@@ -140,7 +118,7 @@ class MinerUClient:
         try:
             payload = response.json()
         except ValueError as error:
-            raise MinerUProtocolError("MinerU parsing endpoint returned neither ZIP nor JSON content.") from error
+            raise ValueError("MinerU 解析结果既不是有效的 ZIP，也不是有效的 JSON。") from error
 
         return MinerUParseResult(
             files={"mineru_response.json": json.dumps(payload, ensure_ascii=False, indent=2).encode("utf-8")},
@@ -151,13 +129,16 @@ class MinerUClient:
     @staticmethod
     def read_zip_files(content: bytes) -> dict[str, bytes]:
         files: dict[str, bytes] = {}
-        with zipfile.ZipFile(BytesIO(content)) as archive:
-            for member in archive.infolist():
-                if member.is_dir():
-                    continue
-                files[member.filename] = archive.read(member)
+        try:
+            with zipfile.ZipFile(BytesIO(content)) as archive:
+                for member in archive.infolist():
+                    if member.is_dir():
+                        continue
+                    files[member.filename] = archive.read(member)
+        except (zipfile.BadZipFile, EOFError) as error:
+            raise ValueError("MinerU 返回的 ZIP 文件已损坏或格式不正确。") from error
         if not files:
-            raise MinerUProtocolError("MinerU parsing ZIP response did not contain files.")
+            raise ValueError("MinerU 返回的 ZIP 文件中没有解析结果。")
         return files
 
     async def close(self) -> None:

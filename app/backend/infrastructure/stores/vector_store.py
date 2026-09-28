@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
@@ -17,6 +18,8 @@ class VectorStore:
     def __init__(self, client: Any, settings: Settings) -> None:
         self.client = client
         self.settings = settings
+        self.initialization_lock = asyncio.Lock()
+        self.collections_ready = True
 
     @classmethod
     async def connect(cls, settings: Settings) -> "VectorStore":
@@ -31,16 +34,27 @@ class VectorStore:
                 api_key=api_key,
                 timeout=settings.qdrant_timeout_seconds,
                 prefer_grpc=settings.qdrant_prefer_grpc,
-                check_compatibility=settings.qdrant_check_compatibility,
+                check_compatibility=settings.qdrant_check_compatibility and "qdrant" in settings.health_required_components,
             )
 
         store = cls(client=client, settings=settings)
+        if settings.qdrant_mode == "server" and "qdrant" not in settings.health_required_components:
+            store.collections_ready = False
+            return store
         try:
             await store.ensure_collections()
         except Exception:
             await client.close()
             raise
         return store
+
+    async def ensure_ready(self) -> None:
+        if self.collections_ready:
+            return
+        async with self.initialization_lock:
+            if not self.collections_ready:
+                await self.ensure_collections()
+                self.collections_ready = True
 
     async def ensure_collections(self) -> None:
         await self.ensure_hybrid_collection(
@@ -109,17 +123,18 @@ class VectorStore:
         await self.assert_dense_schema(name, dimension)
     async def upsert_vectors(self, *, paper_chunks: list[PaperChunk], dense_vectors: list[list[float]], sparse_vectors: list[SparseEmbedding]) -> None:
         """Upsert vectors into the Qdrant collection."""
+        await self.ensure_ready()
         if not (len(paper_chunks) == len(dense_vectors) == len(sparse_vectors)):
-            raise RuntimeError(f"Chunk/vector count mismatch: chunks={len(paper_chunks)}, dense={len(dense_vectors)}, sparse={len(sparse_vectors)}.")
+            raise ValueError(f"文本块与向量数量不匹配：文本块 {len(paper_chunks)}，稠密向量 {len(dense_vectors)}，稀疏向量 {len(sparse_vectors)}。")
 
         if not paper_chunks:
             return
 
         for index, vector in enumerate(dense_vectors):
             if len(vector) != self.settings.text_embedding_dimension:
-                raise RuntimeError(
-                    f"Vector dimension mismatch at index {index}: "
-                    f"expected {self.settings.text_embedding_dimension}, received {len(vector)}."
+                raise ValueError(
+                    f"第 {index} 个向量维度不匹配："
+                    f"预期 {self.settings.text_embedding_dimension}，实际 {len(vector)}。"
                 )
 
         points = [
@@ -159,6 +174,7 @@ class VectorStore:
 
     async def delete_vectors(self, *, paper_id: str) -> None:
         """Delete all vectors for a given paper_id from the Qdrant collection."""
+        await self.ensure_ready()
         await self.client.delete(
             collection_name=self.settings.qdrant_hybrid_collection,
             points_selector=Filter(must=[FieldCondition(key="paper_id", match=MatchValue(value=paper_id))]),
@@ -166,6 +182,7 @@ class VectorStore:
         )
 
     async def query_text_chunks(self, *, query_vector: list[float], limit: int):
+        await self.ensure_ready()
         result = await self.client.query_points(
             collection_name=self.settings.qdrant_hybrid_collection,
             query=query_vector,
@@ -180,10 +197,11 @@ class VectorStore:
         self, *, dense_query: list[float], sparse_query: SparseEmbedding,
         limit: int = 20, prefetch_k: int = 30,
     ):
+        await self.ensure_ready()
         if limit < 1 or prefetch_k < 1:
-            raise ValueError("Retrieval limits must be positive.")
+            raise ValueError("检索数量上限必须为正数。")
         if len(dense_query) != self.settings.text_embedding_dimension:
-            raise ValueError("Query vector dimension mismatch.")
+            raise ValueError("查询向量维度不匹配。")
         prefetch_depth = max(limit, prefetch_k)
         routes = [models.Prefetch(query=dense_query, using="dense", limit=prefetch_depth)]
         if sparse_query.indices:
@@ -225,10 +243,10 @@ class VectorStore:
             and sparse["sparse"].modifier == models.Modifier.IDF
         )
         if not valid:
-            raise RuntimeError(
-                f"Hybrid collection '{name}' requires named dense ({dimension} dimensions, "
-                f"{self.settings.qdrant_distance}) and sparse with IDF. "
-                "Use a new compatible collection and backfill; existing data was not changed."
+            raise ValueError(
+                f"混合检索集合 '{name}' 需要名为 dense 的稠密向量（{dimension} 维，"
+                f"{self.settings.qdrant_distance}）和启用 IDF 的 sparse 稀疏向量。"
+                "请创建兼容的集合并回填数据；现有数据未修改。"
             )
 
     async def assert_dense_schema(self, name: str, dimension: int) -> None:
@@ -239,9 +257,9 @@ class VectorStore:
             or vectors.size != dimension
             or vectors.distance != self.distance()
         ):
-            raise RuntimeError(
-                f"Dense collection '{name}' requires one unnamed vector "
-                f"({dimension} dimensions, {self.settings.qdrant_distance})."
+            raise ValueError(
+                f"稠密向量集合 '{name}' 需要一个未命名向量"
+                f"({dimension} 维，{self.settings.qdrant_distance})."
             )
     async def close(self) -> None:
         await self.client.close()

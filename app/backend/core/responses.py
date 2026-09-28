@@ -5,7 +5,8 @@ from typing import Generic, TypeVar
 from fastapi import Request
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.backend.core.codes import CommonCode, resolve_code
+from http import HTTPStatus
+from app.backend.core.exceptions import message_for_http_status
 from app.backend.middleware.request_context import get_current_request_id
 
 
@@ -43,11 +44,10 @@ def request_id_from_request(request: Request | None = None) -> str:
     return get_current_request_id()
 
 
-def build_response(*, code: int | CommonCode, data: T | None, request_id: str, message: str | None = None,) -> ApiResponse[T]:
-    spec = resolve_code(code)
+def build_response(*, code: int | HTTPStatus, data: T | None, request_id: str, message: str | None = None,) -> ApiResponse[T]:
     return ApiResponse[T](
         code=int(code),
-        message=message or spec.message,
+        message=message or message_for_http_status(code),
         data=data,
         request_id=request_id,
     )
@@ -55,7 +55,7 @@ def build_response(*, code: int | CommonCode, data: T | None, request_id: str, m
 
 def ok(*, data: T | None = None, request: Request | None = None, request_id: str | None = None, message: str | None = None) -> ApiResponse[T]:
     return build_response(
-        code=CommonCode.OK,
+        code=HTTPStatus.OK,
         message=message,
         data=data,
         request_id=request_id or request_id_from_request(request),
@@ -64,14 +64,14 @@ def ok(*, data: T | None = None, request: Request | None = None, request_id: str
 
 def created(*, data: T | None = None, request: Request | None = None, request_id: str | None = None, message: str | None = None) -> ApiResponse[T]:
     return build_response(
-        code=CommonCode.CREATED,
+        code=HTTPStatus.CREATED,
         message=message,
         data=data,
         request_id=request_id or request_id_from_request(request),
     )
 
 
-def fail(*, code: int | CommonCode, request: Request | None = None, request_id: str | None = None, message: str | None = None) -> ApiResponse[None]:
+def fail(*, code: int | HTTPStatus, request: Request | None = None, request_id: str | None = None, message: str | None = None) -> ApiResponse[None]:
     return build_response(
         code=code,
         message=message,

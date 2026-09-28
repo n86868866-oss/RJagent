@@ -21,24 +21,7 @@ class PaperDocumentMetadata:
 class PaperParseResult:
     paper_id: str
     paper_name: str
-    filename: str
-    file_size_bytes: int
-    text_block_count: int
     page_count: int | None
-    status: str
-    parsed_files: dict[str, str]
-    metadata: PaperDocumentMetadata
-
-
-@dataclass(frozen=True, slots=True)
-class PaperDeleteResult:
-    paper_id: str
-    paper_name: str
-    filename: str
-    file_size_bytes: int
-    text_block_count: int
-    page_count: int | None
-    status: str
 
 
 @dataclass(frozen=True, slots=True)

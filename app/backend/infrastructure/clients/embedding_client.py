@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from threading import Lock
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -9,6 +10,7 @@ from typing import Any
 import httpx
 
 from app.backend.config import Settings
+from fastembed import SparseTextEmbedding
 
 
 logger = logging.getLogger(__name__)
@@ -17,9 +19,6 @@ RETRYABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
 RETRYABLE_EXCEPTIONS = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.RemoteProtocolError, httpx.NetworkError)
 
 
-class EmbeddingClientError(RuntimeError):
-    """Raised when the local embedding service request or response is invalid."""
-
 @dataclass(frozen=True)
 class SparseEmbedding:
     indices: list[int]
@@ -27,13 +26,19 @@ class SparseEmbedding:
 
 class BM25Encoder:
     def __init__(self):
-        from fastembed import SparseTextEmbedding
+        self.encoder = None
+        self.load_lock = Lock()
 
-        self.encoder = SparseTextEmbedding(
-            model_name="Qdrant/bm25",
-            language="english",
-            avg_len=256.0,
-        )
+    @property
+    def encoder(self):
+        with self.load_lock:
+            if self.encoder is None:
+                self.encoder = SparseTextEmbedding(
+                    model_name="Qdrant/bm25",
+                    language="english",
+                    avg_len=256.0,
+                )
+        return self.encoder
 
     @staticmethod
     def convert(value) -> SparseEmbedding:
@@ -54,7 +59,7 @@ class EmbeddingClient:
 
     def __init__(self, settings: Settings, transport: httpx.AsyncBaseTransport | None = None) -> None:
         if settings.text_embedding_provider != "local_tei":
-            raise ValueError("TEXT_EMBEDDING_PROVIDER must be local_tei.")
+            raise ValueError("TEXT_EMBEDDING_PROVIDER 必须设置为 local_tei。")
 
         headers: dict[str, str] = {"Content-Type": "application/json"}
         if settings.text_embedding_api_key is not None:
@@ -105,7 +110,8 @@ class EmbeddingClient:
             except RETRYABLE_EXCEPTIONS as error:
                 last_error = error
                 if attempt >= self.max_retries:
-                    raise EmbeddingClientError(f"Embedding request failed after {self.max_retries + 1} attempts.") from error
+                    logger.error("嵌入服务请求失败，已用尽 %s 次重试", self.max_retries, exc_info=True)
+                    raise  # 保留原异常及堆栈，由全局处理器生成中文响应。
                 await asyncio.sleep(0.5 * (2**attempt))
                 continue
 
@@ -116,53 +122,51 @@ class EmbeddingClient:
                 await asyncio.sleep(0.5 * (2**attempt))
                 continue
 
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as error:
-                raise EmbeddingClientError(f"Embedding service returned HTTP {response.status_code}.") from error
-
-        raise EmbeddingClientError("Embedding request did not produce a response.") from last_error
+            response.raise_for_status()
+            logger.error("嵌入服务请求失败，已用尽 %s 次重试", self.max_retries, exc_info=True)
+        
+        raise ValueError("嵌入请求结束但没有获得响应。") from last_error
 
     def parse_vectors(self, response: httpx.Response, *, expected_count: int) -> list[list[float]]:
         try:
             data = response.json()
         except ValueError as error:
-            raise EmbeddingClientError("Embedding service returned a non-JSON response.") from error
+            raise ValueError("嵌入服务返回的内容不是有效的 JSON。") from error
 
         if not isinstance(data, list):
-            raise EmbeddingClientError("Embedding response must be a JSON list.")
+            raise ValueError("嵌入服务的响应必须是 JSON 数组。")
         if len(data) != expected_count:
-            raise EmbeddingClientError(f"Embedding count mismatch: expected {expected_count}, received {len(data)}.")
+            raise ValueError(f"嵌入向量数量不匹配：预期 {expected_count}，实际 {len(data)}。")
 
         vectors: list[list[float]] = []
         for index, item in enumerate(data):
             if not isinstance(item, list):
-                raise EmbeddingClientError(f"Embedding item at index {index} is not a vector.")
+                raise ValueError(f"第 {index} 项嵌入结果不是向量。")
             if len(item) != self.dimension:
-                raise EmbeddingClientError(f"Unexpected embedding dimension: expected {self.dimension}, received {len(item)}.")
+                raise ValueError(f"嵌入向量维度不匹配：预期 {self.dimension}，实际 {len(item)}。")
             try:
                 vectors.append([float(value) for value in item])
             except (TypeError, ValueError) as error:
-                raise EmbeddingClientError(f"Embedding vector at index {index} contains a non-numeric value.") from error
+                raise ValueError(f"第 {index} 个嵌入向量包含非数字值。") from error
 
         return vectors
 
     @staticmethod
     def validate_texts(texts: Sequence[str]) -> list[str]:
         if isinstance(texts, str):
-            raise TypeError("embed_documents expects a sequence of strings, not one plain string.")
+            raise TypeError("embed_documents 需要字符串序列，不能传入单个字符串。")
 
         cleaned_texts: list[str] = []
         for index, text in enumerate(texts):
             if not isinstance(text, str):
-                raise TypeError(f"Embedding input at index {index} is not a string.")
+                raise TypeError(f"第 {index} 项嵌入输入不是字符串。")
             cleaned = text.strip()
             if not cleaned:
-                raise ValueError(f"Embedding input at index {index} is empty.")
+                raise ValueError(f"第 {index} 项嵌入输入为空。")
             cleaned_texts.append(cleaned)
 
         if not cleaned_texts:
-            raise ValueError("At least one text is required.")
+            raise ValueError("至少需要一段文本。")
 
         return cleaned_texts
 

@@ -1,92 +1,48 @@
-from __future__ import annotations
-
-import logging
+"""仅保留业务拒绝和服务未就绪；SDK、文件系统和数据校验使用原生异常。"""
 from collections.abc import Mapping
-from enum import IntEnum
 from typing import Any
 
-from app.backend.core.codes import BusinessCode, CommonCode, resolve_code
+from http import HTTPStatus
+
+HTTP_MESSAGES = {
+    HTTPStatus.OK: "请求成功",
+    HTTPStatus.CREATED: "创建成功",
+    HTTPStatus.BAD_REQUEST: "请求参数不合法",
+    HTTPStatus.UNAUTHORIZED: "请先完成认证",
+    HTTPStatus.FORBIDDEN: "没有权限执行该操作",
+    HTTPStatus.NOT_FOUND: "资源不存在",
+    HTTPStatus.METHOD_NOT_ALLOWED: "请求方法不支持",
+    HTTPStatus.CONFLICT: "资源状态冲突",
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: "上传文件过大",
+    HTTPStatus.UNSUPPORTED_MEDIA_TYPE: "文件格式不支持",
+    HTTPStatus.TOO_MANY_REQUESTS: "请求过于频繁，请稍后再试",
+    HTTPStatus.INTERNAL_SERVER_ERROR: "服务器内部错误，请稍后重试",
+    HTTPStatus.BAD_GATEWAY: "网关响应异常",
+    HTTPStatus.SERVICE_UNAVAILABLE: "服务暂时不可用，请稍后重试",
+    HTTPStatus.GATEWAY_TIMEOUT: "网关响应超时",
+}
+
+
+def message_for_http_status(status_code: int) -> str:
+    if status_code in HTTP_MESSAGES:
+        return HTTP_MESSAGES[status_code]
+    if 400 <= status_code < 500:
+        return "请求无法处理"
+    if 500 <= status_code < 600:
+        return HTTP_MESSAGES[HTTPStatus.INTERNAL_SERVER_ERROR]
+    return "请求已处理"
 
 
 class AppError(Exception):
-    """Expected application error with safe user-facing text and log context."""
-
-    def __init__(self, code: int | IntEnum, *, message: str | None = None, context: Mapping[str, Any] | None = None, log_level: int = logging.WARNING) -> None:
-        spec = resolve_code(code)
-        self.code = int(code)
-        self.http_status = int(spec.http_status)
-        self.message = message or spec.message
+    def __init__(self, status_code: int, *, message: str | None = None, context: Mapping[str, Any] | None = None) -> None:
+        self.status_code = int(status_code)
+        self.message = message or message_for_http_status(status_code)
         self.context = dict(context or {})
-        self.log_level = log_level
         super().__init__(self.message)
 
 
-class AuthenticationError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(CommonCode.UNAUTHORIZED, context=context)
+class ServiceUnavailableError(AppError):
+    """未就绪资源的 503 快捷异常，复用 AppError 处理器。"""
 
-
-class PermissionDeniedError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(CommonCode.FORBIDDEN, context=context)
-
-
-class ResourceNotFoundError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(CommonCode.NOT_FOUND, context=context)
-
-
-class ConflictError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(CommonCode.CONFLICT, context=context)
-
-
-class DuplicatePaperError(AppError):
-    def __init__(self, *, paper_name: str | None = None, fingerprint: str | None = None) -> None:
-        context = {key: value for key, value in {"paper_name": paper_name, "fingerprint": fingerprint}.items() if value}
-        super().__init__(BusinessCode.PAPER_ALREADY_EXISTS, context=context)
-
-
-class PaperFormatUnsupportedError(AppError):
-    def __init__(self, *, filename: str | None = None, content_type: str | None = None) -> None:
-        context = {key: value for key, value in {"filename": filename, "content_type": content_type}.items() if value}
-        super().__init__(BusinessCode.PAPER_FORMAT_UNSUPPORTED, context=context)
-
-
-class SQLiteUnavailableError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.SQLITE_UNAVAILABLE, context=context)
-
-
-class QdrantUnavailableError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.QDRANT_UNAVAILABLE, context=context)
-
-
-class TextEmbeddingUnavailableError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.TEXT_EMBEDDING_UNAVAILABLE, context=context)
-
-
-class MinerUUnavailableError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.MINERU_UNAVAILABLE, context=context)
-
-
-class MinerUResultInvalidError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.MINERU_RESULT_INVALID, context=context)
-
-
-class FileStorageUnavailableError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.FILE_STORAGE_UNAVAILABLE, context=context)
-
-
-class LangChainUnavailableError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.LANGCHAIN_UNAVAILABLE, context=context)
-
-class TextEmbeddingError(AppError):
-    def __init__(self, *, context: Mapping[str, Any] | None = None) -> None:
-        super().__init__(BusinessCode.TEXT_EMBEDDING_ERROR, context=context)
+    def __init__(self, detail: str) -> None:
+        super().__init__(HTTPStatus.SERVICE_UNAVAILABLE, context={"reason": detail})

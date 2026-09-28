@@ -5,10 +5,6 @@ import httpx
 from app.backend.config import Settings
 
 
-class VisualEmbeddingProtocolError(RuntimeError):
-    """Raised when the visual embedding health response is invalid."""
-
-
 class VisualEmbeddingClient:
     """Shared HTTP connection for the optional visual embedding service."""
 
@@ -48,12 +44,12 @@ class VisualEmbeddingClient:
             try:
                 payload = response.json()
             except ValueError as error:
-                raise VisualEmbeddingProtocolError(
-                    "Visual embedding health endpoint returned invalid JSON."
+                raise ValueError(
+                    "视觉嵌入健康检查返回的 JSON 无效。"
                 ) from error
             if not isinstance(payload, dict):
-                raise VisualEmbeddingProtocolError(
-                    "Visual embedding health endpoint returned an invalid object."
+                raise ValueError(
+                    "视觉嵌入健康检查返回的对象格式不正确。"
                 )
 
     async def close(self) -> None:

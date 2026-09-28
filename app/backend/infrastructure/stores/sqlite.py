@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,7 @@ class SQLiteDatabase:
         try:
             import aiosqlite
         except ImportError as error:  # pragma: no cover - environment failure
-            raise RuntimeError("aiosqlite is required. Install the packages from requirements.txt.") from error
+            raise RuntimeError("缺少 aiosqlite，请安装 requirements.txt 中的依赖。") from error
 
         path.parent.mkdir(parents=True, exist_ok=True)
         connection = await aiosqlite.connect(path)
@@ -52,7 +53,7 @@ class SQLiteDatabase:
         cursor = await self.connection.execute("SELECT 1 AS ok")
         row = await cursor.fetchone()
         if row is None or row["ok"] != 1:
-            raise RuntimeError("SQLite health query returned an invalid result.")
+            raise RuntimeError("SQLite 健康检查返回了无效结果。")
 
     async def close(self) -> None:
         await self.connection.close()

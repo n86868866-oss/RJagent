@@ -779,3 +779,32 @@ def is_valid_title(value: str) -> bool:
     lowered = value.lower()
     invalid = {"abstract", "keywords", "references", "contents", "table of contents"}
     return lowered not in invalid
+
+
+# Strict boundary used by ingestion orchestration.
+def require_paper_name(result: Any) -> str:
+    value = extract_paper_name(result)
+    if value is None:
+        raise ValueError("MinerU 标题预解析未识别出论文名称。")
+    return value
+
+
+def require_text_blocks(result: Any) -> list[TextBlock]:
+    value = build_text_blocks(result)
+    if not value:
+        raise ValueError("MinerU 全文解析未返回文本块。")
+    return value
+
+
+def require_normalized_text(blocks: list[TextBlock]) -> str:
+    value = join_block_text(blocks)
+    if not value.strip():
+        raise ValueError("MinerU 解析内容规范化后为空。")
+    return value
+
+
+def require_content_list(result: Any) -> list:
+    value = load_content_list(result)
+    if not isinstance(value, list):
+        raise ValueError("MinerU 内容列表格式不正确。")
+    return value

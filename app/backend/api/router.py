@@ -12,10 +12,7 @@ business_router = APIRouter(prefix="/api")
 
 
 @root_router.get("/", response_model=ApiResponse[dict[str, str]], tags=["system"])
-async def root(
-    request: Request,
-    settings: Settings = Depends(get_settings),
-) -> ApiResponse[dict[str, str]]:
+async def root(request: Request, settings: Settings = Depends(get_settings)) -> ApiResponse[dict[str, str]]:
     return ok(
         data={
             "name": settings.app_name,

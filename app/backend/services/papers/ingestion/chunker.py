@@ -32,7 +32,7 @@ class Chunker:
                 if document.page_content.strip():
                     chunks.append(document)
             else:
-                raise ValueError(f"unsupported_content_type:{content_type}")
+                raise ValueError(f"文档内容类型不受支持：{content_type}")
 
         content_type_order = {"text": 0, "table": 1, "image": 2, "chart": 2, "footnote": 3}
         return sorted(chunks, key=lambda document: (
@@ -110,5 +110,7 @@ class Chunker:
                     },
                 )
             )
+        if not paper_chunks:
+            raise ValueError("文档切分后没有可用的论文片段。")
         return paper_chunks
     

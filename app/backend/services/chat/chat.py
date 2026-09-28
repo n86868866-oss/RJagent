@@ -2,7 +2,7 @@ import json
 import re
 
 from app.backend.config import Settings
-from app.backend.infrastructure.clients.llm_client import LLMClient, LLMProtocolError
+from app.backend.infrastructure.clients.llm_client import LLMClient
 from app.backend.services.chat.retriver import Retriever, RerankedCandidate
 from app.backend.services.chat.model import AnswerSource, ChatAnswerResult
 
@@ -83,23 +83,23 @@ class ChatService:
                 )
 
             if not can_retrieve:
-                raise LLMProtocolError("Agent 超过最大检索次数后仍在调用工具。")
+                raise ValueError("Agent 超过最大检索次数后仍在调用工具。")
 
             message.append(answer.model_dump(exclude_none=True))
 
             for tool_call in tool_calls:
                 name = tool_call.function.name
                 if name != "retrieve_paper":
-                    raise LLMProtocolError(f"未知工具：{name}")
+                    raise ValueError(f"未知工具：{name}")
 
                 try:
                     arguments = json.loads(tool_call.function.arguments)
                     raw_query = arguments["query"]
                 except (json.JSONDecodeError, KeyError, TypeError) as error:
-                    raise LLMProtocolError("LLM 返回的检索工具参数不合法。") from error
+                    raise ValueError("LLM 返回的检索工具参数不合法。") from error
 
                 if not isinstance(raw_query, str) or not raw_query.strip():
-                    raise LLMProtocolError("LLM 返回的检索词为空。")
+                    raise ValueError("LLM 返回的检索词为空。")
 
                 retrieval_query = raw_query.strip()
                 normalized_query = " ".join(retrieval_query.casefold().split())
@@ -121,7 +121,7 @@ class ChatService:
 
             logger.debug(message)
                 
-        raise LLMProtocolError("Agent 未生成最终回答。")
+        raise ValueError("Agent 未生成最终回答。")
 
     @staticmethod
     def register_evidence(*, candidates: list[RerankedCandidate], evidence_by_id: dict[int, RerankedCandidate], evidence_id_by_chunk: dict[str, int]) -> str:
@@ -155,10 +155,10 @@ class ChatService:
         invalid_ids = [evidence_id for evidence_id in used_ids if evidence_id not in evidence_by_id]
 
         if invalid_ids:
-            raise LLMProtocolError(f"LLM 引用了不存在的证据：{invalid_ids}")
+            raise ValueError(f"LLM 引用了不存在的证据：{invalid_ids}")
 
         if not used_ids and answer != INSUFFICIENT_ANSWER:
-            raise LLMProtocolError("LLM 生成了回答但没有引用证据。")
+            raise ValueError("LLM 生成了回答但没有引用证据。")
 
         sources = []
         for evidence_id in used_ids:
@@ -168,7 +168,6 @@ class ChatService:
                 citation_id=evidence_id,
                 paper_name=str(payload.get("paper_name")),
                 paper_id=str(payload.get("paper_id")),
-                chunk_id=str(payload.get("chunk_id")),
                 section_title=str(payload.get("section_title") or "未识别章节"),
                 page_numbers=payload.get("page_numbers") or []
             ))

@@ -36,7 +36,7 @@ class Retriever:
             dense_query=dense_vector,
             sparse_query=sparse_vector,
             limit=self.limit,
-            prefetch_k=max(self.limit, (self.limit * 3 + 1) // 2),
+            prefetch_k=30,
         )
 
         candidates = [

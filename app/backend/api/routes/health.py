@@ -3,12 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from app.backend.api.dependencies import get_health_service, get_settings
-from app.backend.api.schemas.health import HealthDetailsData, LivenessData, ReadinessData
+from app.backend.services.health.models import HealthCheckResult, LivenessData, ReadinessData
 from app.backend.config import Settings
-from app.backend.core.codes import CommonCode
-from app.backend.core.exceptions import ResourceNotFoundError
+from http import HTTPStatus
+from fastapi import HTTPException
 from app.backend.core.responses import ApiResponse, build_response, ok, request_id_from_request
-from app.backend.services.health_service import HealthService
+from app.backend.services.health.health_service import HealthService
 
 
 router = APIRouter(prefix="/health", tags=["health"])
@@ -38,14 +38,14 @@ async def ready(
     response: Response,
     service: HealthService = Depends(get_health_service),
 ) -> ApiResponse[ReadinessData]:
-    """Run a fresh full check and expose only readiness fields."""
+    """Probe required components only; optional components remain unchecked."""
 
-    result = await service.check()
+    result = await service.check(include_optional=False)
     data = ReadinessData.model_validate(result)
     if result.status == "not_ready":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return build_response(
-            code=CommonCode.SERVICE_UNAVAILABLE,
+            code=HTTPStatus.SERVICE_UNAVAILABLE,
             data=data,
             message="服务未就绪",
             request_id=request_id_from_request(request),
@@ -53,24 +53,24 @@ async def ready(
     return ok(data=data, request=request, message="服务已就绪")
 
 
-@router.get("/details", response_model=ApiResponse[HealthDetailsData])
+@router.get("/details", response_model=ApiResponse[HealthCheckResult])
 async def details(
     request: Request,
     response: Response,
     settings: Settings = Depends(get_settings),
     service: HealthService = Depends(get_health_service),
-) -> ApiResponse[HealthDetailsData]:
+) -> ApiResponse[HealthCheckResult]:
     """Run a fresh full check and expose restricted diagnostic fields."""
 
     if not settings.health_details_enabled:
-        raise ResourceNotFoundError(context={"route": "/health/details"})
+        raise HTTPException(status_code=HTTPStatus.NOT_FOUND)
 
     result = await service.check()
-    data = HealthDetailsData.model_validate(result)
+    data = result
     if result.status == "not_ready":
         response.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
         return build_response(
-            code=CommonCode.SERVICE_UNAVAILABLE,
+            code=HTTPStatus.SERVICE_UNAVAILABLE,
             data=data,
             message="服务未就绪",
             request_id=request_id_from_request(request),
