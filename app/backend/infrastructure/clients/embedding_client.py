@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from threading import Lock
 from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -26,19 +25,11 @@ class SparseEmbedding:
 
 class BM25Encoder:
     def __init__(self):
-        self.encoder = None
-        self.load_lock = Lock()
-
-    @property
-    def encoder(self):
-        with self.load_lock:
-            if self.encoder is None:
-                self.encoder = SparseTextEmbedding(
-                    model_name="Qdrant/bm25",
-                    language="english",
-                    avg_len=256.0,
-                )
-        return self.encoder
+        self.encoder = SparseTextEmbedding(
+            model_name="Qdrant/bm25",
+            language="english",
+            avg_len=256.0,
+        )
 
     @staticmethod
     def convert(value) -> SparseEmbedding:

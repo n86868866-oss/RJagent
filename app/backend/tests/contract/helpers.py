@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from http import HTTPStatus
 from types import SimpleNamespace
 from typing import Any
 
+import httpx
 from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -11,37 +13,47 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.backend.api.dependencies import get_health_service, get_settings
 from app.backend.api.routes import health
 from app.backend.core.exception_handlers import register_exception_handlers
-from app.backend.core.exceptions import DuplicatePaperError, PaperFormatUnsupportedError, PermissionDeniedError
+from app.backend.core.exceptions import AppError
 from app.backend.core.responses import ApiResponse, created, ok
 from app.backend.middleware.access_log import access_log_middleware
 from app.backend.middleware.request_context import REQUEST_ID_HEADER, request_context_middleware
-from app.backend.services.health_service import ComponentCheckResult, HealthCheckResult
+from app.backend.services.health.models import ComponentCheckResult, HealthCheckResult
 
 
 API_RESPONSE_FIELDS = {"code", "message", "data", "request_id"}
 
 
 class FakeHealthService:
-    async def check(self) -> HealthCheckResult:
+    async def check(self, *, include_optional: bool = True) -> HealthCheckResult:
+        components = {
+            "application": ComponentCheckResult(
+                status="ok",
+                required=True,
+                probe="lifespan_ready_flag",
+                latency_ms=0.0,
+            ),
+            "text_embedding": ComponentCheckResult(
+                status="error",
+                required=True,
+                probe="real_embedding_request",
+                latency_ms=12.34,
+                error_type="ConnectError",
+                error_message="连接失败",
+            ),
+        }
+        if include_optional:
+            components["llm"] = ComponentCheckResult(
+                status="error",
+                required=False,
+                probe="minimal_chat_completion",
+                latency_ms=5.0,
+                error_type="ConnectError",
+                error_message="连接失败",
+            )
         return HealthCheckResult(
             status="not_ready",
             checked_at=datetime(2026, 8, 12, 8, 0, 0, tzinfo=timezone.utc),
-            components={
-                "application": ComponentCheckResult(
-                    status="ok",
-                    required=True,
-                    probe="lifespan_ready_flag",
-                    latency_ms=0.0,
-                ),
-                "text_embedding": ComponentCheckResult(
-                    status="error",
-                    required=True,
-                    probe="real_embedding_request",
-                    latency_ms=12.34,
-                    error_type="ConnectError",
-                    error_message="连接失败",
-                ),
-            },
+            components=components,
         )
 
 
@@ -90,23 +102,27 @@ def build_contract_app(*, settings: SimpleNamespace | None = None) -> FastAPI:
     @app.get("/contract/http-error/{status_code}")
     async def http_error(status_code: int) -> None:
         headers = {"WWW-Authenticate": "Bearer"} if status_code == 401 else None
-        raise HTTPException(
-            status_code=status_code,
-            detail="internal framework detail",
-            headers=headers,
-        )
+        raise HTTPException(status_code=status_code, detail="internal detail", headers=headers)
 
     @app.get("/contract/duplicate-paper")
     async def duplicate_paper() -> None:
-        raise DuplicatePaperError(fingerprint="test-fingerprint")
+        raise AppError(
+            HTTPStatus.CONFLICT,
+            message="论文已存在",
+            context={"fingerprint": "test-fingerprint"},
+        )
 
     @app.get("/contract/unsupported-paper")
     async def unsupported_paper() -> None:
-        raise PaperFormatUnsupportedError(filename="note.txt", content_type="text/plain")
+        raise AppError(HTTPStatus.UNSUPPORTED_MEDIA_TYPE)
 
-    @app.get("/contract/permission-denied")
-    async def permission_denied() -> None:
-        raise PermissionDeniedError(context={"scope": "contract"})
+    @app.get("/contract/dependency-unavailable")
+    async def dependency_unavailable(request: Request) -> None:
+        raise httpx.ConnectError("dependency address", request=httpx.Request("GET", "http://dependency"))
+
+    @app.get("/contract/dependency-failure")
+    async def dependency_failure() -> None:
+        raise OSError("sensitive filesystem path")
 
     @app.get("/contract/unknown-error")
     async def unknown_error() -> None:
@@ -118,7 +134,13 @@ def build_contract_app(*, settings: SimpleNamespace | None = None) -> FastAPI:
     return app
 
 
-def assert_api_response(response: Response, *, http_status: int, code: int | None = None, message: str | None = None) -> dict[str, Any]:
+def assert_api_response(
+    response: Response,
+    *,
+    http_status: int,
+    code: int | None = None,
+    message: str | None = None,
+) -> dict[str, Any]:
     assert response.status_code == http_status
     request_id = response.headers.get(REQUEST_ID_HEADER)
     assert request_id

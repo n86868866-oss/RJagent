@@ -109,11 +109,6 @@ python -m pip install --upgrade --force-reinstall torch==2.8.0 torchvision==0.23
 pip check
 pip freeze > requirements-mineru-lock.txt
 
-### 启动mineru服务
-conda activate rjagent-mineru
-mineru-api --host 127.0.0.1 --port 8001
-访问 http://127.0.0.1:8001/docs 验证服务
-
 ### 向量模型部署
 1. 创建目录：data\tei
 2. docker部署：
@@ -142,6 +137,11 @@ https://help.aliyun.com/zh/model-studio/embedding-interfaces-compatible-with-ope
 3. 若启用 Cookie Session，生成 APP_SECRET_KEY(可选)
 python -c "import secrets; print(secrets.token_urlsafe(48))"
 
+### 启动mineru服务
+conda activate rjagent-mineru
+mineru-api --host 127.0.0.1 --port 8001
+访问 http://127.0.0.1:8001/docs 验证服务
+
 ### 启动qdrant服务（本地服务模式）
 docker volume create qdrant_storage
 docker run -d --name qdrant -p 127.0.0.1:6333:6333 -p 127.0.0.1:6334:6334 -v qdrant_storage:/qdrant/storage qdrant/qdrant:latest
@@ -153,19 +153,14 @@ uvicorn app.backend.main:app --reload --host 127.0.0.1 --port 8000
 访问 http://127.0.0.1:8000/health/live、 http://127.0.0.1:8000/health/ready、http://127.0.0.1:8000/health/details 检查程序健康状态
 访问 http://127.0.0.1:6333/dashboard 查看qdrant数据库
 
-### 单元/集成测试
-1. 设置环境变量（集成单元全测试）
-cmd：set RUN_DASHSCOPE_INTEGRATION_TEST=1
-powershell：$env:RUN_DASHSCOPE_INTEGRATION_TEST="1"
-Linux：RUN_DASHSCOPE_INTEGRATION_TEST=1
-2. 测试
-python -m app.backend.units.check_text_embedding
-python -m pytest app/backend/units/contracts -q
-3. 清除环境变量（仅单元测试）
-cmd：set RUN_DASHSCOPE_INTEGRATION_TEST=
-powershell：Remove-Item Env:RUN_DASHSCOPE_INTEGRATION_TEST
-Linux：unset RUN_DASHSCOPE_INTEGRATION_TEST
+### 单元、契约与集成测试
 
+```powershell
+python -m pytest app/backend/tests -q
+python -m pytest app/backend/tests/unit -q
+python -m pytest app/backend/tests/contract -q
+python -m pytest app/backend/tests/integration -q
+```
 ## 当前项目边界
 
 为了优先完成可运行的 MVP，当前版本暂不实现：

@@ -168,6 +168,7 @@ class ChatService:
                 citation_id=evidence_id,
                 paper_name=str(payload.get("paper_name")),
                 paper_id=str(payload.get("paper_id")),
+                chunk_id=str(payload.get("chunk_id")),
                 section_title=str(payload.get("section_title") or "未识别章节"),
                 page_numbers=payload.get("page_numbers") or []
             ))

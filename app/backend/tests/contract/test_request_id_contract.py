@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 
 from app.backend.middleware.request_context import REQUEST_ID_HEADER
 
-from app.backend.units.contracts.helpers import (
+from app.backend.tests.contract.helpers import (
     assert_api_response,
     build_contract_app,
     make_settings,
