@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from uuid import uuid4
 
 from app.backend.config import Settings
@@ -28,6 +29,11 @@ from app.backend.services.papers.models import PaperChunk, PaperParseResult
 
 logger = logging.getLogger(__name__)
 PDF_CONTENT_TYPES = {"application/pdf", "application/x-pdf", "application/octet-stream"}
+
+
+def _collapse_ws(text: str) -> str:
+    """合并空白并去除首尾空格，用于判断两段文本是否实质相同。"""
+    return re.sub(r"\s+", " ", text or "").strip()
 
 
 class PaperService:
@@ -161,19 +167,16 @@ class PaperService:
     @staticmethod
     def build_embedding_text(chunk: PaperChunk) -> str:
         metadata = chunk.metadata
-        paper_name = metadata.get("paper_name")
-        parent_title = metadata.get("parent_title")
         section_title = metadata.get("section_title")
-        section_level = metadata.get("section_level")
         caption = metadata.get("caption")
-        content_type = metadata.get("content_type")
+
+        # 图片/图表去重，表格仍然保留 caption 作为语义来源。
+        if caption and _collapse_ws(caption) == _collapse_ws(chunk.text):
+            caption = None
 
         parts = [
-            f"Paper title: {paper_name}" if paper_name else "",
-            f"Parent section: {parent_title}" if parent_title else "",
             f"Section title: {section_title}" if section_title else "",
-            f"Section level: {section_level}" if section_level is not None else "",
-            f"Table caption: {caption}" if content_type == "table" and caption else "",
+            f"Caption: {caption}" if caption else "",
             "Content:",
             chunk.text,
         ]

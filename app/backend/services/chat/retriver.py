@@ -27,6 +27,7 @@ class Retriever:
         self.vector_store = vector_store
         self.reranker_client = reranker_client
         self.limit = settings.retriever_candidate_top_k
+        self.prefetch_k = settings.retriever_prefetch_k
 
     async def retrieve(self, *, query: str) -> list[RerankedCandidate]:
         dense_vector = await self.embedding_client.embed_query(query)
@@ -36,7 +37,7 @@ class Retriever:
             dense_query=dense_vector,
             sparse_query=sparse_vector,
             limit=self.limit,
-            prefetch_k=30,
+            prefetch_k=self.prefetch_k,
         )
 
         candidates = [
@@ -45,7 +46,7 @@ class Retriever:
                 hybrid_score=float(point.score),
                 payload=dict(point.payload or {}),
             )
-            for point in points
+            for point in points[:self.limit]
         ]
 
         if not candidates:

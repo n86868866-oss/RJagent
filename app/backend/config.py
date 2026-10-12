@@ -354,14 +354,20 @@ class Settings(BaseSettings):
         description="Maximum retry count after a failed reranking request.",
     )
 
+    retriever_prefetch_k: int = Field(
+        default=30,
+        ge=1,
+        title="Retriever prefetch K",
+        description="Number of candidates fetched from each retrieval route before RRF fusion.",
+    )
     retriever_candidate_top_k: int = Field(
-        default=20,
+        default=30,
         ge=1,
         title="Retriever candidate top K",
-        description="Number of candidates returned by the initial retrieval stage.",
+        description="Number of highest-ranked fused candidates sent to the reranker.",
     )
     retriever_final_top_k: int = Field(
-        default=6,
+        default=5,
         ge=1,
         title="Retriever final top K",
         description="Number of candidates retained for the final LLM context.",
@@ -446,12 +452,6 @@ class Settings(BaseSettings):
         title="Maximum upload size",
         description="Maximum allowed PDF upload size in megabytes.",
     )
-    retrieval_top_k: int = Field(
-        default=6,
-        ge=1,
-        title="Retrieval top K",
-        description="Default number of retrieved chunks.",
-    )
     chunk_size_chars: int = Field(
         default=1800,
         ge=1,
@@ -477,30 +477,6 @@ class Settings(BaseSettings):
         description="Maximum number of papers ingested concurrently.",
     )
 
-    retrieval_candidate_top_k: int = Field(
-        default=20,
-        ge=1,
-        title="Candidate retrieval top K",
-        description="Number of chunks returned by the initial retrieval stage.",
-    )
-    retrieval_final_top_k: int = Field(
-        default=6,
-        ge=1,
-        title="Final retrieval top K",
-        description="Number of chunks retained for the final LLM context.",
-    )
-    figure_retrieval_top_k: int = Field(
-        default=6,
-        ge=1,
-        title="Figure retrieval top K",
-        description="Number of figures returned by visual retrieval.",
-    )
-    max_retrieval_attempts: int = Field(
-        default=2,
-        ge=1,
-        title="Maximum retrieval attempts",
-        description="Maximum number of query rewrite and retrieval attempts.",
-    )
     max_agent_steps: int = Field(
         default=4,
         ge=1,
@@ -655,9 +631,15 @@ class Settings(BaseSettings):
                 "CHUNK_OVERLAP_CHARS 必须小于 CHUNK_SIZE_CHARS。"
             )
 
-        if self.retrieval_final_top_k > self.retrieval_candidate_top_k:
+        if self.retriever_final_top_k > self.retriever_candidate_top_k:
             raise ValueError(
-                "RETRIEVAL_FINAL_TOP_K 不能超过 RETRIEVAL_CANDIDATE_TOP_K。"
+                "RETRIEVER_FINAL_TOP_K 不能超过 RETRIEVER_CANDIDATE_TOP_K。"
+            )
+
+        if self.retriever_candidate_top_k > self.retriever_prefetch_k:
+            raise ValueError(
+                "RETRIEVER_CANDIDATE_TOP_K 不能超过 RETRIEVER_PREFETCH_K，"
+                "否则融合阶段拿不到足够候选。"
             )
 
         embedding_batch_limits = {
