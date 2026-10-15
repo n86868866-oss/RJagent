@@ -29,20 +29,21 @@ class LLMClient:
         self.max_retries = settings.llm_max_retries
         self.temperature = settings.llm_temperature
 
-    async def complete(self, *, messages: Sequence[dict[str, Any]], max_tokens: int = 1024, tools: list[dict[str, Any]] | None = None, tool_choice: str = "auto") -> ChatCompletionMessage:
+    async def complete(self, *, messages: Sequence[dict[str, Any]], max_tokens: int = 1024, tools: list[dict[str, Any]] | None = None, tool_choice: str = "auto", temperature: float | None = None) -> tuple[ChatCompletionMessage, dict[str, int | None]]:
         if self.client is None:
             raise ServiceUnavailableError("大语言模型服务尚未配置。")
-        response = await self.client.chat.completions.create(
+        request: dict[str, Any] = dict(
             model=self.model,
             messages=messages,
-            tools=tools,
-            tool_choice=tool_choice,
             parallel_tool_calls=False,
             max_tokens=max_tokens,
-            temperature=self.temperature,
+            temperature=self.temperature if temperature is None else temperature,
             top_p=0.8,
             extra_body={"top_k": 20},
         )
+        if tools is not None:
+            request.update(tools=tools, tool_choice=tool_choice)
+        response = await self.client.chat.completions.create(**request)
 
         if not response.choices:
             raise ValueError("大语言模型未返回候选回答。")
@@ -57,7 +58,11 @@ class LLMClient:
 
         logger.debug("LLM completion response: %s", response)
 
-        return response.choices[0].message
+        return response.choices[0].message, {
+            "prompt_tokens": response.usage.prompt_tokens if response.usage else None,
+            "completion_tokens": response.usage.completion_tokens if response.usage else None,
+            "total_tokens": response.usage.total_tokens if response.usage else None,
+        }
 
     async def probe(self) -> None:
         """Make one minimal real chat-completion request."""

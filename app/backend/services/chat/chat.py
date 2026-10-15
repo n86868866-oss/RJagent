@@ -5,53 +5,43 @@ from app.backend.config import Settings
 from app.backend.infrastructure.clients.llm_client import LLMClient
 from app.backend.services.chat.retriver import Retriever, RerankedCandidate
 from app.backend.services.chat.model import AnswerSource, ChatAnswerResult
+from app.backend.services.chat.tools import RetrievePaperTool, ToolRegistry, parse_action
 
 import logging
-
 logger = logging.getLogger(__name__)
 
 
 SYSTEM_PROMPT = """
-你是论文问答助手。
-请始终使用中文回答，英文专业术语首次出现时保留英文原词。
-只能根据提供的论文证据回答，不得自行补充证据中没有的信息，数字、公式和单位必须保持原样。
-首次检索时，将用户问题改写为适合英文论文检索的查询。
+你是一个具备推理和行动能力的论文问答助手。你可以通过思考分析问题，然后调用合适的工具来获取信息，最终给出准确的答案。
 
-如果已有证据不足以回答问题，应先判断缺失的具体信息，然后根据缺失信息生成新的检索词。
-新检索词应聚焦缺失信息，例如具体指标、实验名称、表格、方法名称、英文术语或数值。
-新检索词应区分类型，例如“语义改写”、“补充指标”、“补充实验”、“补充方法”、“补充数值”等。
+## 可用工具
+{tools}
 
-每个结论必须使用 [证据编号] 标注来源，只能引用工具返回的证据编号，不得自行编造证据编号。
-每个引用必须使用独立格式，例如：[证据2][证据7]。
+## 工作流程
+请严格使用以下格式回应，每次只能执行一个步骤，即只有一组输出：
 
-证据不足时回答：根据当前检索到的论文内容无法确定。
+Thought: 分析当前问题，思考需要什么信息或采取什么行动。
+Action: 选择一个行动，格式必须是以下之一:
+- `{tool_name}[{tool_input}]` - 调用指定工具
+- `Finish[最终答案]` - 当你有足够信息给出最终答案时
+
+## 重要提醒
+1. 每次回应必须包含Thought和Action两部分。
+2. 工具调用的格式必须严格遵循:工具名[参数]，例如：retrieve_paper[{"query":"..."}]。
+3. 只有当你确信有足够信息能够正确回答问题时，才使用Finish
+4. 如果工具返回的信息不够，继续使用其他工具或相同工具的不同参数，例如：收到 Observation 后，先检查它是否直接支持所问结论。若不足且仍有合理的新检索方向，换一个针对缺失信息的英文检索词继续检索。第一次结果不匹配，不等于论文没有答案。
+5. 请用中文回答
+6. 具体事实回答中的每个结论必须引用 Observation 中出现的证据编号，例如：[证据2][证据7]，而且不得自行编造事实或编造不存在的证据编号。
+
+现在开始你的推理和行动:
 """
-
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "retrieve_paper",
-            "description": "根据用户问题检索相关论文段落",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "query": {
-                        "type": "string",
-                        "description": "用于检索论文内容的问题",
-                        "minLength": 1,
-                    }
-                },
-                "required": ["query"],
-                "additionalProperties": False,
-            },
-        },
-    }
-]
 
 CITATION_PATTERN = re.compile(r"\[证据(\d+)\]")
 INSUFFICIENT_ANSWER = "根据当前检索到的论文内容无法确定。"
-MAX_RETRIEVALS = 3
+INVALID_CITATION_ANSWER = "回答中的证据引用无效，无法确认结论。"
+AGENT_FAILED_ANSWER = "Agent 达到最大动作步数，未能完成有效的检索与回答，请重试。"
+MAX_AGENT_STEPS = 5
+
 
 class ChatService:
     def __init__(self, *, retriever: Retriever, llm_client: LLMClient, settings: Settings) -> None:
@@ -60,105 +50,58 @@ class ChatService:
         self.temperature = settings.llm_temperature
 
     async def answer(self, *, query: str) -> ChatAnswerResult:
-        message = [{"role": "system", "content": SYSTEM_PROMPT}]
-        message.append({"role": "user", "content": f"问题：{query}"})
+        registry = ToolRegistry()
+        paper_tool = RetrievePaperTool(retriever=self.retriever)
+        registry.register_tool(paper_tool)
+        messages = [{"role": "system", "content": SYSTEM_PROMPT.replace("{tools}", registry.get_tools_description())}]
+        messages.append({"role": "user", "content": f"问题：{query}"})
 
-        retrieval_queries: set[str] = set()
-        evidence_by_id: dict[int, RerankedCandidate] = {}
-        evidence_id_by_chunk: dict[str, int] = {}
+        for step in range(MAX_AGENT_STEPS):
+            reply, _ = await self.llm_client.complete(messages=list(messages), max_tokens=1024, temperature=self.temperature)
+            raw_action = reply.content or ""
+            try:
+                action = parse_action(raw_action)
+            except ValueError:
+                logger.warning("Agent 第 %s 步动作格式错误，原始输出：%r", step + 1, raw_action)
+                messages.append({"role": "user", "content": "刚才的输出格式无效，未被执行，也不是检索证据。请只输出一组 Thought: ... 和 Action: retrieve_paper[{\"query\":\"英文检索词\"}] 或 Action: Finish[最终答案]。"})
+                continue
+            if action["action"] == "finish":
+                citation_error = self.citation_error(answer=action["content"], evidence_by_id=paper_tool.evidence_by_id)
+                if citation_error:
+                    logger.warning("Agent 第 %s 步 Finish 未被采纳，原因:%s 已检索次数:%s 可用证据编号:%s 原始答案:%r", step + 1, citation_error, len(paper_tool.queries), sorted(paper_tool.evidence_by_id), action["content"])
+                    messages.append({"role": "user", "content": "刚才的 Finish 未被采纳：答案缺少真实证据编号，或引用了不存在的编号。请依据实际 Observation 修正；若证据不足，请换英文检索词继续调用 retrieve_paper。"})
+                    continue
+                if action["content"].strip() == INSUFFICIENT_ANSWER:
+                    logger.info("Agent 第 %s 步主动拒答，已检索次数:%s", step + 1, len(paper_tool.queries))
+                return self.build_result(answer=action["content"], evidence_by_id=paper_tool.evidence_by_id)
 
-        for turn in range(MAX_RETRIEVALS + 1):
-            can_retrieve = turn < MAX_RETRIEVALS
-            answer = await self.llm_client.complete(
-                messages=message,
-                tools=TOOLS,
-                tool_choice="required" if turn == 0 else "auto" if can_retrieve else "none",
-                max_tokens=1024,
-            )
-            tool_calls = answer.tool_calls or []
-            if not tool_calls:
-                return self.build_result(
-                    answer=answer.content or INSUFFICIENT_ANSWER,
-                    evidence_by_id=evidence_by_id,
-                )
+            messages.append({"role": "assistant", "content": raw_action})
+            logger.info("Agent 第 %s 步工具调用：%s[%s]", step + 1, action["name"],json.dumps(action["arguments"], ensure_ascii=False, separators=(",", ":")))
+            tool_content = await registry.execute_tool(action["name"], action["arguments"])
+            messages.append({"role": "user", "content": f"Observation（{action['name']} 的结果）：\n{tool_content}"})
 
-            if not can_retrieve:
-                raise ValueError("Agent 超过最大检索次数后仍在调用工具。")
-
-            message.append(answer.model_dump(exclude_none=True))
-
-            for tool_call in tool_calls:
-                name = tool_call.function.name
-                if name != "retrieve_paper":
-                    raise ValueError(f"未知工具：{name}")
-
-                try:
-                    arguments = json.loads(tool_call.function.arguments)
-                    raw_query = arguments["query"]
-                except (json.JSONDecodeError, KeyError, TypeError) as error:
-                    raise ValueError("LLM 返回的检索工具参数不合法。") from error
-
-                if not isinstance(raw_query, str) or not raw_query.strip():
-                    raise ValueError("LLM 返回的检索词为空。")
-
-                retrieval_query = raw_query.strip()
-                normalized_query = " ".join(retrieval_query.casefold().split())
-
-                if normalized_query in retrieval_queries:
-                    tool_content = (
-                        "该检索词已经执行过。请根据当前缺失的信息，"
-                        "改用不同且更具体的英文检索词。"
-                    )
-                else:
-                    retrieval_queries.add(normalized_query)
-                    candidates = await self.retriever.retrieve(query=retrieval_query)
-                    tool_content = self.register_evidence(
-                        candidates=candidates,
-                        evidence_by_id=evidence_by_id,
-                        evidence_id_by_chunk=evidence_id_by_chunk,
-                    )
-                message.append({"role": "tool", "tool_call_id": tool_call.id, "content": tool_content})
-
-            logger.debug(message)
-                
-        raise ValueError("Agent 未生成最终回答。")
+        logger.warning("Agent 达到最大动作步数，未完成有效回答；已检索次数:%s", len(paper_tool.queries))
+        return ChatAnswerResult(answer=AGENT_FAILED_ANSWER, sources=[])
 
     @staticmethod
-    def register_evidence(*, candidates: list[RerankedCandidate], evidence_by_id: dict[int, RerankedCandidate], evidence_id_by_chunk: dict[str, int]) -> str:
-        blocks: list[str] = []
-
-        for candidate in candidates:
-            payload = candidate.candidate.payload
-            chunk_id = str(payload["chunk_id"])
-
-            if chunk_id in evidence_id_by_chunk:
-                continue
-
-            evidence_id = len(evidence_by_id) + 1
-            evidence_by_id[evidence_id] = candidate
-            evidence_id_by_chunk[chunk_id] = evidence_id
-
-            blocks.append("\n".join([
-                f"[证据{evidence_id}]",
-                f"论文：{payload.get('paper_name')}",
-                f"章节：{payload.get('section_title')}",
-                f"页码：{payload.get('page_numbers') or '未知'}",
-                f"内容：{payload.get('text')}",
-            ]))
-
-        return "\n\n".join(blocks) or ("本次检索没有发现新的论文证据，请改写检索词。")
+    def citation_error(*, answer: str, evidence_by_id: dict[int, RerankedCandidate]) -> str | None:
+        answer = answer.strip()
+        if answer == INSUFFICIENT_ANSWER:
+            return None
+        used_ids = {int(value) for value in CITATION_PATTERN.findall(answer)}
+        unknown_ids = sorted(used_ids - evidence_by_id.keys())
+        if unknown_ids:
+            return f"引用了不存在的证据编号 {unknown_ids}"
+        # if not used_ids:
+        #     return "答案缺少证据编号，且不是固定格式的拒答"
+        return None
 
     @staticmethod
     def build_result(*, answer: str, evidence_by_id: dict[int, RerankedCandidate]) -> ChatAnswerResult:
         answer = answer.strip()
         used_ids = list(dict.fromkeys(int(value) for value in CITATION_PATTERN.findall(answer)))
-        invalid_ids = [evidence_id for evidence_id in used_ids if evidence_id not in evidence_by_id]
-
-        if invalid_ids:
-            raise ValueError(f"LLM 引用了不存在的证据：{invalid_ids}")
-
-        if not used_ids and answer != INSUFFICIENT_ANSWER:
-            raise ValueError("LLM 生成了回答但没有引用证据。")
+        if ChatService.citation_error(answer=answer, evidence_by_id=evidence_by_id):
+            return ChatAnswerResult(answer=INVALID_CITATION_ANSWER, sources=[])
 
         sources = []
         for evidence_id in used_ids:
@@ -174,4 +117,3 @@ class ChatService:
             ))
 
         return ChatAnswerResult(answer=answer, sources=sources)
-    
